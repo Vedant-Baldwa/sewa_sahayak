@@ -1,737 +1,606 @@
-# System Design Document - Sewa Sahayak
+# Design Document: RoadFix AI
 
 ## Overview
-This document describes the high-level architecture and detailed design for Sewa Sahayak, an AI-powered conversational assistant for government services submitted to the AWS AI for Bharat Hackathon.
 
-## Project Information
-- **Project Name**: Sewa Sahayak (Service Helper)
-- **Tagline**: "Your Voice, Our AI - Simplifying Government Services for Every Indian"
-- **Version**: 1.0
-- **Date**: January 2026
+RoadFix AI is a civic-tech solution that leverages Amazon Bedrock's multi-modal AI capabilities to automate road damage reporting to Indian government portals. The system addresses the "Reporting Wall" problem by acting as an intelligent intermediary that processes citizen-submitted evidence (video/voice) and automatically fills government forms using agentic web automation.
 
-## Architecture Overview
+The system combines Amazon Bedrock LLMs for multi-modal analysis with Amazon Nova Act for browser automation, creating a seamless bridge between citizens and government reporting systems. By reducing reporting time from 15+ minutes to under 3 minutes, the system aims to increase civic participation in infrastructure maintenance.
+
+## Architecture
 
 ### High-Level Architecture
-```
-┌─────────────────────────────────────────────────────────────┐
-│ USER LAYER                                                  │
-├─────────────────────────────────────────────────────────────┤
-│ [Mobile App] [Web Browser] [SMS] [WhatsApp] [IVR]         │
-│    (PWA)     (Responsive)  Gateway  Business   Voice       │
-└────────────┬────────────────────────────────────────────────┘
-             │
-             ↓
-┌────────────┴────────────────────────────────────────────────┐
-│ API GATEWAY LAYER                                           │
-│ • AWS API Gateway / Kong                                    │
-│ • Rate Limiting & Throttling                                │
-│ • Authentication & Authorization (JWT)                      │
-│ • Request Routing & Load Balancing                          │
-└────────────┬────────────────────────────────────────────────┘
-             │
-             ↓
-┌────────────┴────────────────────────────────────────────────┐
-│ APPLICATION LAYER                                           │
-│ • Conversation Service (Node.js/Express)                    │
-│ • Form Processing Service (Python/FastAPI)                  │
-│ • Complaint Management Service                              │
-│ • Notification Service                                      │
-│ • Authentication Service                                    │
-│ • Analytics Service                                         │
-└────────────┬────────────────────────────────────────────────┘
-             │
-             ↓
-┌────────────┴────────────────────────────────────────────────┐
-│ AI/ML LAYER                                                 │
-│ • AWS Bedrock / Claude API (Conversational AI)             │
-│ • AWS Rekognition (Computer Vision)                         │
-│ • AWS Translate (Multilingual Support)                      │
-│ • AWS Transcribe (Speech-to-Text)                           │
-│ • AWS Polly (Text-to-Speech)                                │
-└────────────┬────────────────────────────────────────────────┘
-             │
-             ↓
-┌────────────┴────────────────────────────────────────────────┐
-│ DATA LAYER                                                  │
-│ • PostgreSQL (User data, complaints, forms)                 │
-│ • MongoDB (Conversations, chat history)                     │
-│ • Redis Cache (Session data, real-time data)               │
-│ • AWS S3 (Images, documents, PDFs)                          │
-│ • Elasticsearch (Full-text search, analytics)               │
-│ • Apache Kafka (Event streaming)                            │
-└─────────────────────────────────────────────────────────────┘
-```
 
-### System Components
-
-1. **Frontend Layer**
-   - Progressive Web App (PWA) using React.js
-   - Tailwind CSS for responsive UI
-   - Voice input integration (Web Speech API)
-   - Camera/Gallery access for photo uploads
-   - Service Workers for offline support
-   - WebSockets for real-time updates
-
-2. **API Layer**
-   - REST API endpoints
-   - JWT-based authentication & authorization
-   - Rate limiting and throttling
-   - Request validation and sanitization
-
-3. **Application Layer**
-   - Business logic processing
-   - Data validation and transformation
-   - Integration with AI/ML services
-   - Complaint routing and management
-   - Notification orchestration
-
-4. **AI/ML Layer**
-   - Conversational AI for natural language understanding
-   - Computer vision for image analysis
-   - Multilingual translation
-   - Speech processing (STT/TTS)
-
-5. **Data Layer**
-   - Relational database for structured data
-   - Document store for conversations
-   - Object storage for media files
-   - Caching layer for performance
-   - Search engine for analytics
-
-## AWS Services Architecture
-
-### Core Services
-- **Amazon EC2 / ECS**: Application hosting with container orchestration
-- **AWS Lambda**: Serverless functions for event-driven tasks
-- **Amazon API Gateway**: API management and rate limiting
-- **Amazon S3**: Object storage for images, documents, and PDFs
-- **Amazon RDS (PostgreSQL)**: Relational database for user data and complaints
-- **Amazon ElastiCache (Redis)**: In-memory caching for sessions
-
-### AI/ML Services
-- **Amazon Bedrock / Anthropic Claude**: Conversational AI and NLU
-- **Amazon Rekognition**: Image classification and damage assessment
-- **Amazon Translate**: Multilingual support (12+ Indian languages)
-- **Amazon Transcribe**: Speech-to-text conversion
-- **Amazon Polly**: Text-to-speech for voice responses
-- **Amazon Comprehend**: Sentiment analysis (optional)
-
-### Supporting Services
-- **Amazon CloudFront**: CDN for static content delivery
-- **AWS IAM**: Identity and access management
-- **Amazon CloudWatch**: Monitoring, logging, and alerting
-- **AWS Secrets Manager**: Secure credential storage
-- **AWS WAF**: Web application firewall
-- **AWS Route 53**: DNS management
-- **Amazon SES**: Email notifications
-- **Amazon SNS**: Push notifications
-
-## Detailed Component Design
-
-### Frontend Design
-
-**Technology Stack**: React.js 18+, Tailwind CSS, PWA
-
-**Key Components**:
-- **Authentication Module**: OTP-based login, Aadhaar integration
-- **Conversation Interface**: Chat-like UI with voice input
-- **Complaint Form**: Dynamic form with photo upload
-- **Dashboard**: View complaints, track status, analytics
-- **Settings**: Language selection, notifications, profile
-
-**User Experience Flow**:
-```
-1. User opens Sewa Sahayak (web/PWA)
-2. Language selection (auto-detect or manual)
-3. Authentication (OTP verification)
-4. Choose service: Register Complaint / Fill Form / Track
-5. Conversational interaction with AI
-6. Upload photos (if complaint)
-7. Review and confirm details
-8. Receive reference number
-9. Track status in real-time
-10. Rate and provide feedback
+```mermaid
+graph TB
+    subgraph "User Interface Layer"
+        UI[Mobile Web App]
+        PWA[Progressive Web App]
+    end
+    
+    subgraph "API Gateway & Authentication"
+        AG[Amazon API Gateway]
+        AUTH[AWS Cognito]
+    end
+    
+    subgraph "Core Processing Layer"
+        ORCH[AWS Step Functions]
+        LAMBDA[AWS Lambda Functions]
+    end
+    
+    subgraph "AI/ML Services"
+        BEDROCK[Amazon Bedrock LLMs]
+        REKOGNITION[Amazon Rekognition]
+    end
+    
+    subgraph "Web Automation"
+        NOVA_ACT[Amazon Nova Act]
+        AUTOMATION[Browser Automation Engine]
+    end
+    
+    subgraph "Data & Storage"
+        S3[Amazon S3]
+        DYNAMO[Amazon DynamoDB]
+        SECRETS[AWS Secrets Manager]
+    end
+    
+    subgraph "Government Portals"
+        MUNICIPAL[Municipal Portals]
+        STATE[State Portals]
+        CENTRAL[Central Portals]
+    end
+    
+    UI --> AG
+    PWA --> AG
+    AG --> AUTH
+    AG --> ORCH
+    ORCH --> LAMBDA
+    LAMBDA --> BEDROCK
+    LAMBDA --> REKOGNITION
+    LAMBDA --> NOVA_ACT
+    NOVA_ACT --> AUTOMATION
+    AUTOMATION --> MUNICIPAL
+    AUTOMATION --> STATE
+    AUTOMATION --> CENTRAL
+    LAMBDA --> S3
+    LAMBDA --> DYNAMO
+    LAMBDA --> SECRETS
 ```
 
-### Backend API Design
+### Component Architecture
 
-**Endpoints**:
-```
-Authentication:
-POST /api/auth/send-otp          - Send OTP to phone
-POST /api/auth/verify-otp        - Verify OTP and login
-POST /api/auth/logout            - Logout user
+The system follows a microservices architecture with the following key components:
 
-Complaints:
-POST /api/complaints             - Register new complaint
-GET  /api/complaints/:id         - Get complaint details
-GET  /api/complaints             - List user's complaints
-PUT  /api/complaints/:id/status  - Update complaint status
-POST /api/complaints/:id/feedback - Submit feedback
+1. **Evidence Capture Module**: Handles multi-modal input processing
+2. **Bedrock Analysis Agent**: Performs AI analysis using Bedrock LLMs
+3. **Portal Router**: Determines appropriate government portal
+4. **Web Bridge Agent**: Automates form filling using Nova Act
+5. **Privacy Engine**: Handles PII redaction and data protection
+6. **Human Loop Interface**: Manages user verification and control
 
-Forms:
-GET  /api/forms                  - List available forms
-POST /api/forms/:type            - Submit form data
-GET  /api/forms/:id              - Get form submission status
+## Components and Interfaces
 
-Conversation:
-POST /api/conversation/message   - Send message to AI
-GET  /api/conversation/history   - Get chat history
+### Evidence Capture Module
 
-Media:
-POST /api/media/upload           - Upload photo/document
-GET  /api/media/:id              - Retrieve media file
+**Purpose**: Processes video, voice, and location data from user submissions.
 
-Analytics:
-GET  /api/analytics/heatmap      - Get complaint heatmap
-GET  /api/analytics/trends       - Get trending issues
-GET  /api/analytics/stats        - Get user statistics
+**Key Functions**:
+- Video upload and preprocessing
+- GPS coordinate extraction
+- Metadata collection (timestamp, device info)
+- Input validation and format conversion
 
-Notifications:
-GET  /api/notifications          - Get user notifications
-PUT  /api/notifications/:id/read - Mark notification as read
-```
+**Interfaces**:
+```typescript
+interface EvidenceInput {
+  videoFile?: File;
+  audioFile?: File;
+  gpsCoordinates?: {
+    latitude: number;
+    longitude: number;
+    accuracy: number;
+  };
+  timestamp: Date;
+  deviceInfo: DeviceMetadata;
+}
 
-**Request/Response Format**:
-```json
-{
-  "status": "success|error",
-  "data": {},
-  "message": "Human readable message",
-  "timestamp": "2026-01-23T10:30:00Z"
+interface ProcessedEvidence {
+  evidenceId: string;
+  s3VideoPath?: string;
+  s3AudioPath?: string;
+  location: LocationData;
+  metadata: EvidenceMetadata;
 }
 ```
 
-### AI/ML Pipeline Design
+### Bedrock Analysis Agent
 
-**Conversational AI Flow**:
-```
-User Input (Voice/Text)
-    ↓
-Speech-to-Text (if voice) → AWS Transcribe
-    ↓
-Language Detection → AWS Comprehend
-    ↓
-Translation (if needed) → AWS Translate
-    ↓
-Intent Classification → Claude API (AWS Bedrock)
-    ↓
-Entity Extraction → Claude API
-    ↓
-Context Management → Application Layer
-    ↓
-Response Generation → Claude API
-    ↓
-Translation (if needed) → AWS Translate
-    ↓
-Text-to-Speech (if voice) → AWS Polly
-    ↓
-Response to User
-```
+**Purpose**: Multi-modal AI analysis using Amazon Bedrock LLMs for damage assessment and language processing.
 
-**Image Processing Flow**:
-```
-User Uploads Photo
-    ↓
-Store in S3 → Generate presigned URL
-    ↓
-Image Analysis → AWS Rekognition
-    ↓
-Object Detection (pothole, garbage, etc.)
-    ↓
-Severity Assessment → Custom ML Model
-    ↓
-Geo-tagging → Extract EXIF data
-    ↓
-Auto-categorization → Update Complaint
-    ↓
-Store Results in Database
-```
+**Key Functions**:
+- Video analysis for damage detection and classification using Claude or other vision-capable LLMs
+- Voice transcription and content extraction in regional languages
+- Severity assessment and damage categorization
+- Location context analysis
 
-**Complaint Routing Flow**:
-```
-User Describes Problem
-    ↓
-AI Extracts Key Information
-    ↓
-Categorization → ML Model
-    ↓
-Department Mapping → Rule Engine
-    ↓
-Priority Assignment → Based on keywords/severity
-    ↓
-Generate Reference Number
-    ↓
-Route to Department Dashboard
-    ↓
-Send Confirmation Notification
-```
-
-### Database Design
-
-**PostgreSQL Schema**:
-
-```sql
--- Users Table
-CREATE TABLE users (
-    user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    phone_number VARCHAR(15) UNIQUE NOT NULL,
-    name VARCHAR(100),
-    email VARCHAR(100),
-    preferred_language VARCHAR(10) DEFAULT 'en',
-    aadhaar_verified BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Complaints Table
-CREATE TABLE complaints (
-    complaint_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    reference_number VARCHAR(10) UNIQUE NOT NULL,
-    user_id UUID REFERENCES users(user_id),
-    category VARCHAR(50) NOT NULL,
-    subcategory VARCHAR(50),
-    description TEXT NOT NULL,
-    location_lat DECIMAL(10, 8),
-    location_lng DECIMAL(11, 8),
-    address TEXT,
-    priority VARCHAR(20) DEFAULT 'medium',
-    status VARCHAR(20) DEFAULT 'registered',
-    department VARCHAR(100),
-    assigned_officer_id UUID,
-    estimated_resolution_date DATE,
-    actual_resolution_date DATE,
-    is_anonymous BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Complaint Media Table
-CREATE TABLE complaint_media (
-    media_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    complaint_id UUID REFERENCES complaints(complaint_id),
-    media_type VARCHAR(20) NOT NULL,
-    s3_url TEXT NOT NULL,
-    ai_analysis JSONB,
-    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Complaint Status History Table
-CREATE TABLE complaint_status_history (
-    history_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    complaint_id UUID REFERENCES complaints(complaint_id),
-    status VARCHAR(20) NOT NULL,
-    updated_by UUID,
-    notes TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Forms Table
-CREATE TABLE forms (
-    form_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(user_id),
-    form_type VARCHAR(50) NOT NULL,
-    form_data JSONB NOT NULL,
-    status VARCHAR(20) DEFAULT 'draft',
-    submitted_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Notifications Table
-CREATE TABLE notifications (
-    notification_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(user_id),
-    complaint_id UUID REFERENCES complaints(complaint_id),
-    type VARCHAR(50) NOT NULL,
-    title VARCHAR(200) NOT NULL,
-    message TEXT NOT NULL,
-    is_read BOOLEAN DEFAULT FALSE,
-    sent_via VARCHAR(50),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Feedback Table
-CREATE TABLE feedback (
-    feedback_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    complaint_id UUID REFERENCES complaints(complaint_id),
-    user_id UUID REFERENCES users(user_id),
-    rating INTEGER CHECK (rating >= 1 AND rating <= 5),
-    comments TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Departments Table
-CREATE TABLE departments (
-    department_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(100) NOT NULL,
-    email VARCHAR(100),
-    phone VARCHAR(15),
-    categories TEXT[],
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-**MongoDB Collections**:
-
-```javascript
-// Conversations Collection
-{
-  _id: ObjectId,
-  user_id: String,
-  complaint_id: String,
-  messages: [
-    {
-      role: "user|assistant",
-      content: String,
-      timestamp: Date,
-      language: String,
-      intent: String,
-      entities: Object
-    }
-  ],
-  created_at: Date,
-  updated_at: Date
+**Interfaces**:
+```typescript
+interface AnalysisRequest {
+  evidenceId: string;
+  videoPath?: string;
+  audioPath?: string;
+  location: LocationData;
 }
 
-// Logs Collection
-{
-  _id: ObjectId,
-  level: String,
-  service: String,
-  message: String,
-  metadata: Object,
-  timestamp: Date
+interface AnalysisResult {
+  damageType: 'pothole' | 'crack' | 'surface_deterioration' | 'multiple';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  description: string;
+  confidence: number;
+  extractedText?: string;
+  detectedLanguage?: string;
+  visualFeatures: DamageFeature[];
 }
 ```
 
-## Security Design
+### Portal Router
 
-### Authentication & Authorization
-- **OTP-based Authentication**: SMS/WhatsApp OTP for user verification
-- **JWT Tokens**: Stateless authentication with short-lived access tokens
-- **Refresh Tokens**: Long-lived tokens stored securely
-- **Aadhaar Integration**: Optional identity verification via UIDAI API
-- **Role-Based Access Control**: User, Officer, Admin roles
+**Purpose**: Determines the appropriate government portal based on location and damage type.
 
-### Data Security
-- **Encryption at Rest**: AES-256 encryption for database and S3
-- **Encryption in Transit**: TLS 1.3 for all API communications
-- **Data Anonymization**: Remove PII for anonymous complaints
-- **Secure File Upload**: Virus scanning, file type validation, size limits
-- **API Key Management**: AWS Secrets Manager for credentials
+**Key Functions**:
+- Jurisdiction mapping (municipal/state/central)
+- Portal selection based on damage type
+- Historical effectiveness tracking
+- Fallback portal identification
 
-### API Security
-- **Rate Limiting**: 100 requests per minute per user
-- **Input Validation**: Sanitize all user inputs
-- **CORS Configuration**: Whitelist allowed origins
-- **SQL Injection Prevention**: Parameterized queries
-- **XSS Protection**: Content Security Policy headers
+**Interfaces**:
+```typescript
+interface PortalRoutingRequest {
+  location: LocationData;
+  damageType: string;
+  severity: string;
+}
 
-## Performance Design
-
-### Scalability Strategy
-- **Horizontal Scaling**: Auto Scaling Groups for EC2 instances
-- **Container Orchestration**: Kubernetes for microservices
-- **Database Scaling**: Read replicas for PostgreSQL
-- **Caching Strategy**: Redis for session data and frequently accessed data
-- **CDN**: CloudFront for static assets and media files
-- **Load Balancing**: Application Load Balancer for traffic distribution
-
-### Performance Optimization
-- **API Response Time**: <500ms for 95th percentile
-- **Image Compression**: Optimize images before storage
-- **Lazy Loading**: Progressive data loading in UI
-- **Database Indexing**: Index on frequently queried fields
-- **Query Optimization**: Use database query optimization techniques
-- **Batch Processing**: Queue-based processing for heavy tasks (Kafka)
-
-### Caching Strategy
-```
-Redis Cache Layers:
-- Session data (TTL: 24 hours)
-- User profile (TTL: 1 hour)
-- Complaint categories (TTL: 1 day)
-- Department mappings (TTL: 1 day)
-- Frequently accessed complaints (TTL: 15 minutes)
+interface SelectedPortal {
+  portalId: string;
+  portalName: string;
+  jurisdiction: 'municipal' | 'state' | 'central';
+  baseUrl: string;
+  formPath: string;
+  expectedResponseTime: number;
+  confidence: number;
+}
 ```
 
-## Monitoring and Logging
+### Web Bridge Agent
 
-### Metrics to Track
-- **Application Metrics**:
-  - API response times (p50, p95, p99)
-  - Request rate (requests per second)
-  - Error rate (4xx, 5xx errors)
-  - Active users (concurrent connections)
-  
-- **AI/ML Metrics**:
-  - Model inference time
-  - Intent classification accuracy
-  - Image classification accuracy
-  - Translation quality scores
-  
-- **Business Metrics**:
-  - Complaints registered per day
-  - Average resolution time
-  - User satisfaction ratings
-  - Department response times
+**Purpose**: Automates form filling on government websites using Amazon Nova Act for browser automation.
 
-### Logging Strategy
-- **Structured Logging**: JSON format for all logs
-- **Log Levels**: DEBUG, INFO, WARN, ERROR, FATAL
-- **Centralized Logging**: CloudWatch Logs aggregation
-- **Log Retention**: 30 days for application logs, 90 days for audit logs
-- **Security Event Logging**: Track authentication attempts, data access
+**Key Functions**:
+- Visual form field detection and interaction
+- Automated data entry using Nova Act's browser automation capabilities
+- Session management and error handling
+- CAPTCHA detection and user handoff
 
-### Alerting
-- **Performance Alerts**:
-  - API response time > 2 seconds
-  - Error rate > 5%
-  - CPU utilization > 80%
-  - Memory utilization > 85%
-  
-- **Business Alerts**:
-  - Complaint resolution SLA breach
-  - High-priority complaints unassigned for > 1 hour
-  - Spike in complaint volume (> 200% of average)
-  
-- **Security Alerts**:
-  - Multiple failed authentication attempts
-  - Unusual API access patterns
-  - Data breach attempts
+**Interfaces**:
+```typescript
+interface FormFillingRequest {
+  portal: SelectedPortal;
+  reportData: ReportData;
+  evidenceUrls: string[];
+}
 
-## Deployment Strategy
-
-### Environment Setup
-- **Development**: Local development with Docker Compose
-- **Staging**: AWS environment mirroring production
-- **Production**: Multi-AZ deployment for high availability
-
-### CI/CD Pipeline
-```
-1. Code Commit → GitHub
-2. Automated Tests → Jest, Pytest
-3. Code Quality Check → SonarQube
-4. Build Docker Images → Docker
-5. Push to Registry → Amazon ECR
-6. Deploy to Staging → Kubernetes
-7. Integration Tests → Automated test suite
-8. Manual Approval → Team review
-9. Deploy to Production → Blue-Green deployment
-10. Post-Deployment Verification → Health checks
-11. Rollback (if needed) → Automated rollback
+interface FormFillingResult {
+  status: 'completed' | 'requires_human' | 'failed';
+  filledFields: FieldMapping[];
+  pendingActions: PendingAction[];
+  sessionUrl?: string;
+  errorDetails?: string;
+}
 ```
 
-### Infrastructure as Code
-- **Terraform**: Infrastructure provisioning
-- **Kubernetes Manifests**: Application deployment
-- **Helm Charts**: Package management
-- **Environment Variables**: Managed via AWS Secrets Manager
+### Privacy Engine
 
-### Deployment Architecture
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Route 53 (DNS)                                              │
-└────────────┬────────────────────────────────────────────────┘
-             │
-             ↓
-┌────────────┴────────────────────────────────────────────────┐
-│ CloudFront (CDN)                                            │
-└────────────┬────────────────────────────────────────────────┘
-             │
-             ↓
-┌────────────┴────────────────────────────────────────────────┐
-│ Application Load Balancer                                   │
-└────────────┬────────────────────────────────────────────────┘
-             │
-      ┌──────┴──────┐
-      │             │
-      ↓             ↓
-┌─────────┐   ┌─────────┐
-│ AZ-1    │   │ AZ-2    │
-│ EC2/ECS │   │ EC2/ECS │
-└─────────┘   └─────────┘
-      │             │
-      └──────┬──────┘
-             │
-             ↓
-┌────────────┴────────────────────────────────────────────────┐
-│ RDS (Multi-AZ)                                              │
-└─────────────────────────────────────────────────────────────┘
+**Purpose**: Handles PII redaction and privacy compliance using Amazon Rekognition.
+
+**Key Functions**:
+- Face detection and blurring
+- License plate redaction
+- Audio PII removal
+- Data encryption and secure storage
+
+**Interfaces**:
+```typescript
+interface PrivacyProcessingRequest {
+  videoPath?: string;
+  audioPath?: string;
+  processingOptions: PrivacyOptions;
+}
+
+interface PrivacyProcessingResult {
+  processedVideoPath?: string;
+  processedAudioPath?: string;
+  redactionLog: RedactionEvent[];
+  complianceStatus: 'compliant' | 'requires_review';
+}
 ```
 
-## Data Flow Diagrams
+## Data Models
 
-### Complaint Registration Flow
+### Core Data Models
+
+```typescript
+// User and Session Management
+interface User {
+  userId: string;
+  phoneNumber: string;
+  preferredLanguage: string;
+  location?: LocationData;
+  createdAt: Date;
+  lastActive: Date;
+}
+
+interface ReportSession {
+  sessionId: string;
+  userId: string;
+  status: 'capturing' | 'processing' | 'reviewing' | 'submitting' | 'completed' | 'failed';
+  evidenceId?: string;
+  analysisResult?: AnalysisResult;
+  selectedPortal?: SelectedPortal;
+  formFillingResult?: FormFillingResult;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Location and Geographic Data
+interface LocationData {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  address?: string;
+  city: string;
+  state: string;
+  pincode: string;
+  ward?: string;
+  constituency?: string;
+}
+
+// Damage Analysis
+interface DamageFeature {
+  type: string;
+  boundingBox: BoundingBox;
+  confidence: number;
+  severity: string;
+  description: string;
+}
+
+interface BoundingBox {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+// Government Portal Configuration
+interface GovernmentPortal {
+  portalId: string;
+  name: string;
+  jurisdiction: 'municipal' | 'state' | 'central';
+  baseUrl: string;
+  formSelectors: FormSelector[];
+  supportedDamageTypes: string[];
+  geographicCoverage: GeographicArea[];
+  apiEndpoint?: string;
+  lastUpdated: Date;
+  isActive: boolean;
+}
+
+interface FormSelector {
+  fieldName: string;
+  selector: string;
+  inputType: 'text' | 'select' | 'file' | 'textarea';
+  required: boolean;
+  validationRules?: ValidationRule[];
+}
+
+// Report Data Structure
+interface ReportData {
+  reportId: string;
+  damageType: string;
+  severity: string;
+  description: string;
+  location: LocationData;
+  reporterInfo: ReporterInfo;
+  evidenceUrls: string[];
+  submissionTimestamp: Date;
+  governmentReferenceId?: string;
+}
+
+interface ReporterInfo {
+  name?: string;
+  phoneNumber: string;
+  email?: string;
+  isAnonymous: boolean;
+}
 ```
-User → Frontend → API Gateway → Auth Service (JWT validation)
-    ↓
-Conversation Service → Claude AI (NLU)
-    ↓
-Intent: "Register Complaint"
-    ↓
-Extract entities (location, category, description)
-    ↓
-Image Upload → S3 → Rekognition (classification)
-    ↓
-Complaint Service → Generate reference number
-    ↓
-Store in PostgreSQL + MongoDB (conversation)
-    ↓
-Routing Engine → Determine department
-    ↓
-Kafka Event → Notification Service
-    ↓
-Send SMS/WhatsApp/Email → User + Department
-    ↓
-Return reference number to user
+
+### Database Schema (DynamoDB)
+
+```typescript
+// Primary Tables
+interface UsersTable {
+  PK: string; // USER#{userId}
+  SK: string; // PROFILE
+  userId: string;
+  phoneNumber: string;
+  preferredLanguage: string;
+  location?: LocationData;
+  createdAt: string;
+  lastActive: string;
+  GSI1PK?: string; // PHONE#{phoneNumber}
+}
+
+interface ReportSessionsTable {
+  PK: string; // SESSION#{sessionId}
+  SK: string; // METADATA
+  sessionId: string;
+  userId: string;
+  status: string;
+  evidenceId?: string;
+  analysisResult?: AnalysisResult;
+  selectedPortal?: SelectedPortal;
+  formFillingResult?: FormFillingResult;
+  createdAt: string;
+  updatedAt: string;
+  GSI1PK?: string; // USER#{userId}
+  GSI1SK?: string; // SESSION#{createdAt}
+}
+
+interface GovernmentPortalsTable {
+  PK: string; // PORTAL#{portalId}
+  SK: string; // CONFIG
+  portalId: string;
+  name: string;
+  jurisdiction: string;
+  baseUrl: string;
+  formSelectors: FormSelector[];
+  supportedDamageTypes: string[];
+  geographicCoverage: GeographicArea[];
+  lastUpdated: string;
+  isActive: boolean;
+  GSI1PK?: string; // JURISDICTION#{jurisdiction}
+}
+
+interface ReportsTable {
+  PK: string; // REPORT#{reportId}
+  SK: string; // METADATA
+  reportId: string;
+  sessionId: string;
+  userId: string;
+  damageType: string;
+  severity: string;
+  location: LocationData;
+  status: 'submitted' | 'acknowledged' | 'in_progress' | 'resolved';
+  governmentReferenceId?: string;
+  submissionTimestamp: string;
+  GSI1PK?: string; // LOCATION#{state}#{city}
+  GSI1SK?: string; // DAMAGE#{damageType}#{submissionTimestamp}
+}
 ```
 
-### Status Update Flow
-```
-Officer updates status → Admin Dashboard
-    ↓
-API Gateway → Complaint Service
-    ↓
-Update PostgreSQL (complaints table)
-    ↓
-Insert into status_history table
-    ↓
-Kafka Event → Notification Service
-    ↓
-Send notification to user (SMS/WhatsApp/Push)
-    ↓
-WebSocket → Real-time update in user's dashboard
-```
+Now I need to use the prework tool to analyze the acceptance criteria before writing the Correctness Properties section.
 
-## Integration Points
+<function_calls>
+<invoke name="prework">
+<parameter name="featureName">roadfix-ai
 
-### External APIs
-- **Anthropic Claude API**: Conversational AI
-- **Google Translate API / AWS Translate**: Multilingual support
-- **Google Vision API / AWS Rekognition**: Image analysis
-- **Twilio / MSG91**: SMS gateway
-- **WhatsApp Business API**: WhatsApp notifications
-- **SendGrid / AWS SES**: Email service
-- **Google Maps / MapMyIndia**: Location services
-- **UIDAI API**: Aadhaar authentication
-- **Government Portals**: MyGov, state portals (if available)
+## Correctness Properties
 
-### Internal Services
-- **Authentication Service**: User authentication and authorization
-- **Notification Service**: Multi-channel notifications
-- **Analytics Service**: Data aggregation and insights
-- **Routing Service**: Complaint categorization and routing
+*A property is a characteristic or behavior that should hold true across all valid executions of a system—essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
+
+Based on the prework analysis of acceptance criteria, the following properties ensure the correctness of RoadFix AI across all valid inputs and scenarios:
+
+### Property 1: Multi-modal Evidence Processing
+*For any* combination of video and voice input with location data, the Evidence Capture Module and Bedrock Analysis Agent should successfully extract GPS coordinates, timestamp, damage assessment, and relevant details from voice content, producing a complete evidence record.
+**Validates: Requirements 1.1, 1.2, 1.3**
+
+### Property 2: Jurisdiction Mapping Accuracy
+*For any* valid location data provided to the Portal Router, the system should correctly identify the appropriate government jurisdiction (municipal, state, or central) and select a portal that serves that geographic area.
+**Validates: Requirements 2.1, 2.2**
+
+### Property 3: Portal Selection with Prioritization
+*For any* damage type and location where multiple government portals are applicable, the Portal Router should select the portal with the best historical response time and effectiveness metrics, and provide complete portal information including expected response timeline.
+**Validates: Requirements 2.3, 2.4**
+
+### Property 4: Form Field Detection and Population
+*For any* government portal accessed by the Web Bridge Agent, the system should visually identify form fields, populate them with appropriate data from the evidence analysis, and handle various form elements (text fields, dropdowns, file uploads) correctly.
+**Validates: Requirements 3.1, 3.2, 3.3**
+
+### Property 5: Form Submission Error Recovery
+*For any* form validation error or session timeout encountered during form filling, the Web Bridge Agent should detect the issue, correct the entries where possible, and retry submission while maintaining session state.
+**Validates: Requirements 3.4, 3.5**
+
+### Property 6: PII Detection and Redaction
+*For any* video or audio content processed by the Privacy Engine, the system should automatically detect and redact human faces, license plates, and personal information in audio, while preserving the essential damage-related content.
+**Validates: Requirements 4.1, 4.2, 4.3**
+
+### Property 7: Data Encryption and Privacy Compliance
+*For any* processed media or user data stored by the system, the Privacy Engine should apply industry-standard encryption (AES-256 for rest, TLS 1.3 for transit) and flag uncertain PII detection cases for human review.
+**Validates: Requirements 4.4, 4.5**
+
+### Property 8: Human-in-the-Loop Handoff
+*For any* form filling session that reaches 90% completion or encounters CAPTCHA/human verification, the Human Loop Interface should present the form for user review, highlight auto-filled fields, and enable user modifications before final submission.
+**Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5**
+
+### Property 9: Multi-language Processing
+*For any* voice input in supported Indian regional languages (Hindi, Tamil, Telugu, Bengali, Marathi, Gujarati, Kannada, Malayalam, Punjabi, Odia), the Bedrock Analysis Agent should automatically detect the language, transcribe the content accurately including dialects and accents, and maintain semantic accuracy in translations.
+**Validates: Requirements 6.1, 6.2, 6.3, 6.5**
+
+### Property 10: Offline Storage and Synchronization
+*For any* evidence capture session when internet connectivity is unavailable, the Evidence Capture Module should store video and voice data locally, then automatically sync to cloud processing when connectivity is restored, with proper storage management and user status indication.
+**Validates: Requirements 7.1, 7.2, 7.4, 7.5**
+
+### Property 11: Performance Requirements Compliance
+*For any* processing operation (video analysis under 100MB, voice transcription under 2 minutes, form filling), the system should complete within specified time limits (30s, 15s, 60s respectively) and provide progress updates every 10 seconds for longer operations.
+**Validates: Requirements 8.1, 8.2, 8.3, 8.4**
+
+### Property 12: Cross-Platform Compatibility
+*For any* supported video format and resolution (up to 4K), the system should process the content correctly across different mobile browsers and screen sizes (4-7 inches), with responsive design and appropriate compression options for limited storage.
+**Validates: Requirements 9.3, 9.4, 9.5**
+
+### Property 13: Data Security and User Control
+*For any* user data collection, storage, or sharing operation, the system should obtain explicit consent, use proper encryption, enable data deletion within 30 days upon request, and log all data transfers with user notification.
+**Validates: Requirements 10.3, 10.4, 10.5**
+
+### Property 14: Damage Classification Consistency
+*For any* road damage analysis, the Bedrock Analysis Agent should identify damage types using consistent criteria, categorize severity levels uniformly, detect multiple damage types when present, and flag uncertain assessments for human review while handling various environmental conditions.
+**Validates: Requirements 11.1, 11.2, 11.3, 11.4, 11.5**
+
+### Property 15: System Monitoring and Analytics
+*For any* user interaction, system error, or report submission, the system should generate appropriate logs with sufficient detail for debugging, track submission outcomes, generate capacity alerts based on usage patterns, and provide privacy-compliant aggregated analytics.
+**Validates: Requirements 12.1, 12.2, 12.3, 12.4, 12.5**
 
 ## Error Handling
 
-### Error Categories
-- **Client Errors (4xx)**:
-  - 400 Bad Request: Invalid input data
-  - 401 Unauthorized: Authentication required
-  - 403 Forbidden: Insufficient permissions
-  - 404 Not Found: Resource not found
-  - 429 Too Many Requests: Rate limit exceeded
+### Error Categories and Strategies
 
-- **Server Errors (5xx)**:
-  - 500 Internal Server Error: Unexpected error
-  - 502 Bad Gateway: Upstream service failure
-  - 503 Service Unavailable: Service temporarily down
-  - 504 Gateway Timeout: Request timeout
+**1. Input Validation Errors**
+- Invalid video formats or corrupted files
+- Missing GPS data or invalid coordinates
+- Audio quality too poor for transcription
+- Strategy: Graceful degradation with user feedback and alternative input options
 
-### Error Response Format
-```json
-{
-  "error": {
-    "code": "INVALID_INPUT",
-    "message": "The complaint description is required",
-    "details": {
-      "field": "description",
-      "constraint": "required"
-    },
-    "timestamp": "2026-01-23T10:30:00Z",
-    "request_id": "req_abc123"
-  }
+**2. AI Processing Errors**
+- Bedrock Analysis Agent failures or timeouts
+- Low confidence in damage classification
+- Language detection failures
+- Strategy: Retry with exponential backoff, fallback to human review, error logging
+
+**3. Web Automation Errors**
+- Government portal unavailability or changes
+- Form field detection failures
+- Session timeouts or CAPTCHA challenges
+- Strategy: Portal fallback selection, human-in-the-loop handoff, session recovery
+
+**4. Privacy and Security Errors**
+- PII detection failures
+- Encryption key issues
+- Data compliance violations
+- Strategy: Fail-safe to human review, secure error logging, compliance alerts
+
+**5. Infrastructure Errors**
+- AWS service outages
+- Network connectivity issues
+- Storage capacity limits
+- Strategy: Circuit breaker patterns, offline mode, graceful degradation
+
+### Error Recovery Mechanisms
+
+```typescript
+interface ErrorRecoveryStrategy {
+  errorType: string;
+  maxRetries: number;
+  backoffStrategy: 'exponential' | 'linear' | 'immediate';
+  fallbackAction: 'human_review' | 'alternative_portal' | 'offline_mode' | 'user_notification';
+  escalationThreshold: number;
 }
+
+// Example error recovery configurations
+const errorStrategies: ErrorRecoveryStrategy[] = [
+  {
+    errorType: 'bedrock_analysis_timeout',
+    maxRetries: 3,
+    backoffStrategy: 'exponential',
+    fallbackAction: 'human_review',
+    escalationThreshold: 5
+  },
+  {
+    errorType: 'portal_form_detection_failure',
+    maxRetries: 2,
+    backoffStrategy: 'immediate',
+    fallbackAction: 'alternative_portal',
+    escalationThreshold: 3
+  },
+  {
+    errorType: 'network_connectivity_loss',
+    maxRetries: 0,
+    backoffStrategy: 'immediate',
+    fallbackAction: 'offline_mode',
+    escalationThreshold: 1
+  }
+];
 ```
 
-### Retry Strategy
-- **Exponential Backoff**: For transient failures
-- **Circuit Breaker**: Prevent cascading failures
-- **Fallback Mechanisms**: Graceful degradation
+## Testing Strategy
 
-## Technology Stack Summary
+### Dual Testing Approach
 
-### Frontend
-- React.js 18+
-- Tailwind CSS
-- Progressive Web App (PWA)
-- Web Speech API
-- Socket.io (WebSockets)
+The testing strategy employs both unit testing and property-based testing to ensure comprehensive coverage:
 
-### Backend
-- Node.js + Express.js
-- Python + FastAPI
-- AWS Lambda (Serverless)
+**Unit Tests**: Focus on specific examples, edge cases, and integration points between components. These tests validate concrete scenarios and catch specific bugs in implementation details.
 
-### AI/ML
-- Anthropic Claude API (AWS Bedrock)
-- AWS Rekognition
-- AWS Translate
-- AWS Transcribe
-- AWS Polly
+**Property Tests**: Verify universal properties across all inputs using randomized test data. These tests ensure the system behaves correctly across the full input space and catch edge cases that might be missed by example-based tests.
 
-### Databases
-- PostgreSQL (RDS)
-- MongoDB
-- Redis (ElastiCache)
-- Elasticsearch
+Together, unit tests and property tests provide complementary coverage—unit tests catch concrete implementation bugs while property tests verify general correctness guarantees.
 
-### Infrastructure
-- AWS EC2 / ECS
-- Docker
-- Kubernetes
-- Terraform
-- GitHub Actions (CI/CD)
+### Property-Based Testing Configuration
 
-### Monitoring
-- AWS CloudWatch
-- Prometheus + Grafana (optional)
-- Sentry (Error tracking)
+**Testing Framework**: Use **fast-check** for TypeScript/JavaScript property-based testing, integrated with Jest for the overall testing framework.
 
-## Future Enhancements
+**Test Configuration**:
+- Minimum 100 iterations per property test (due to randomization)
+- Each property test references its corresponding design document property
+- Tag format: **Feature: roadfix-ai, Property {number}: {property_text}**
 
-### Phase 2 Features
-- AI chatbot for government scheme FAQs
-- Virtual queue for office visits
-- Document verification assistance
-- Appointment booking system
-- DigiLocker integration
-- Community forums
-- Gamification (badges, leaderboards)
+**Property Test Implementation Requirements**:
+- Each correctness property must be implemented by a single property-based test
+- Tests should generate realistic input data (valid video files, location coordinates, damage types)
+- Use appropriate generators for Indian geographic data, regional languages, and government portal structures
+- Include edge case generators for poor quality media, network failures, and unusual input combinations
 
-### Technical Improvements
-- GraphQL API for flexible queries
-- Microservices architecture refinement
-- Advanced ML models for better accuracy
-- Blockchain for complaint verification
-- Mobile native apps (iOS/Android)
-- Voice-only interface for feature phones
+### Unit Testing Focus Areas
 
-## Appendices
+**Specific Examples and Edge Cases**:
+- GPS unavailable scenarios (Requirement 1.4)
+- CAPTCHA encounters during form filling (Requirement 5.3)
+- Platform compatibility on specific Android/iOS versions (Requirements 9.1, 9.2)
+- Explicit consent collection flows (Requirement 10.2)
 
-### A. API Documentation
-Complete API documentation available at: `/docs/api-reference.md`
+**Integration Testing**:
+- End-to-end report submission workflows
+- Cross-component data flow validation
+- AWS service integration points
+- Government portal interaction scenarios
 
-### B. Database Schema
-Detailed schema diagrams available at: `/docs/database-schema.md`
+**Error Condition Testing**:
+- Network failure scenarios
+- Invalid input handling
+- Service timeout behaviors
+- Data corruption recovery
 
-### C. Deployment Guide
-Step-by-step deployment instructions at: `/docs/deployment-guide.md`
+### Test Data Management
 
-### D. User Guide
-End-user documentation at: `/docs/user-guide.md`
+**Synthetic Data Generation**:
+- Generate realistic Indian addresses and coordinates
+- Create sample road damage videos with known characteristics
+- Produce multi-language voice samples for testing
+- Mock government portal responses and form structures
 
-### E. Admin Dashboard Guide
-Officer/admin documentation at: `/docs/admin-guide.md`
+**Privacy-Compliant Testing**:
+- Use synthetic PII data for privacy testing
+- Ensure no real user data in test environments
+- Validate PII redaction with known test cases
+- Test encryption/decryption with controlled keys
+
+### Continuous Testing Strategy
+
+**Automated Testing Pipeline**:
+- Property tests run on every commit with full 100-iteration cycles
+- Unit tests provide fast feedback in development
+- Integration tests run on staging environment deployments
+- Performance tests validate timing requirements
+
+**Monitoring and Alerting**:
+- Property test failures trigger immediate alerts
+- Performance regression detection for timing requirements
+- Government portal availability monitoring
+- AI model accuracy tracking over time

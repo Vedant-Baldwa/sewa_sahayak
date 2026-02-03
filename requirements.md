@@ -1,296 +1,162 @@
-# Project Requirements - Sewa Sahayak
+# Requirements Document
 
-## Overview
-This document outlines the functional and non-functional requirements for the Sewa Sahayak project submitted to the AWS AI for Bharat Hackathon.
+## Introduction
 
-## Project Information
-- **Project Name**: Sewa Sahayak (Service Helper)
-- **Tagline**: "Your Voice, Our AI - Simplifying Government Services for Every Indian"
-- **Hackathon**: AWS AI for Bharat
-- **Date**: January 2026
+RoadFix AI is a civic-tech solution that automates the reporting of road damages (potholes, cracks, surface deterioration) to various Indian government portals. The system addresses the "Reporting Wall" problem where citizens struggle to navigate 40+ different government portals to report road issues, reducing reporting time from 15+ minutes to under 3 minutes through AI-powered automation and multi-modal input processing.
 
-## Problem Statement
-68% of Indian citizens struggle with government forms and processes. Language barriers, complex bureaucracy, lack of guidance, and time-consuming procedures prevent millions from accessing their fundamental rights and civic services. Citizens face:
-- Complex navigation through multiple government portals
-- English-centric interfaces excluding 400+ million non-English speakers
-- No guidance on form filling leading to 80% incomplete/rejected applications
-- Confusion about which department handles specific issues
-- Limited access to services (office hours only, requires physical presence)
-- Long wait times and no accountability in complaint resolution
+## Glossary
 
-## Target Users
-- Rural citizens with limited digital literacy
-- Elderly citizens unfamiliar with technology
-- Non-English speaking populations
-- Working professionals seeking quick solutions
-- Students and young citizens wanting hassle-free access
+- **RoadFix_AI**: The complete AI assistant system for automated road damage reporting
+- **Evidence_Capture_Module**: Component that processes video, voice, and location data
+- **Web_Bridge_Agent**: AI agent that automates form filling on government websites
+- **Human_Loop_Interface**: User verification and control interface
+- **Privacy_Engine**: Component that handles PII redaction and data protection
+- **Bedrock_Analysis_Agent**: Amazon Bedrock agent with multi-modal LLMs that analyzes video for damage assessment and processes voice/video input in any Indian regional language
+- **Portal_Router**: System that determines which government portal to use
+- **Government_Portal**: Any of the 40+ official websites for reporting civic issues
 
-## Functional Requirements
+## Requirements
 
-### Core Features
+### Requirement 1: Multi-Modal Evidence Capture
 
-#### 1. Complaint Registration Module
-- User can register complaints through natural language conversation (voice/text)
-- System should support 20+ complaint categories (Water, Sanitation, Roads, Electricity, Property Tax, Noise Pollution, Street Lights, Garbage Collection, etc.)
-- User can upload up to 5 photos/videos as evidence
-- System should auto-capture GPS location and allow manual address input
-- User can mark priority levels (Low, Medium, High, Emergency)
-- System should support anonymous complaint option
-- User can register bulk complaints for community issues
+**User Story:** As a daily commuter, I want to report road damage using video and voice in my regional language, so that I can quickly document issues without typing detailed descriptions.
 
-#### 2. Government Form Assistant
-- User can fill 20+ common government forms through guided conversation
-- System should support: Ration Card, Voter ID, Birth/Death Certificate, Property Tax, Trade License, Building Permit, Water/Electricity Connection
-- System should provide document requirement checklist
-- User can save progress and resume later
-- System should auto-fill from previous submissions
-- System should validate forms and check for errors in real-time
+#### Acceptance Criteria
 
-#### 3. Multilingual Conversational Interface
-- User can interact in 12+ Indian languages (Hindi, English, Tamil, Telugu, Marathi, Bengali, Gujarati, Kannada, Malayalam, Punjabi, Odia, Assamese)
-- System should support voice input in regional languages
-- System should provide text-to-speech responses
-- User can switch languages mid-conversation
-- System should understand code-mixing (Hinglish, Tanglish)
+1. WHEN a user uploads a video clip, THE Evidence_Capture_Module SHALL extract GPS coordinates and timestamp, while THE Bedrock_Analysis_Agent SHALL perform visual damage assessment
+2. WHEN a user provides voice input in any Indian regional language, THE Bedrock_Analysis_Agent SHALL process and extract relevant damage details
+3. WHEN processing multi-modal input (video + voice), THE Bedrock_Analysis_Agent SHALL identify damage type (pothole, crack, surface deterioration) and correlate visual and audio information
+4. WHEN GPS data is unavailable, THE Evidence_Capture_Module SHALL prompt user for manual location input with map interface
+5. WHERE video quality is poor, THE Evidence_Capture_Module SHALL request additional footage or alternative input methods
 
-#### 4. Tracking & Transparency System
-- System should generate unique 10-digit reference number for each complaint
-- User can track real-time status (Registered → Assigned → In Progress → Resolved)
-- System should display estimated resolution time
-- User can view officer details and contact information
-- System should require resolution photo verification
-- User can view complete complaint history
+### Requirement 2: Intelligent Portal Routing
 
-#### 5. Visual AI Integration
-- User can upload photos of problems (potholes, broken pipes, garbage dumps)
-- System should analyze images to auto-detect issue type and severity
-- System should geo-tag photos for precise location tracking
-- System should perform OCR for document verification
+**User Story:** As a citizen unfamiliar with government processes, I want the system to automatically determine which portal to use, so that I don't waste time navigating multiple websites.
 
-#### 6. Smart Features
-- System should auto-categorize issues using AI
-- System should detect duplicate complaints
-- User can view related complaints in their area
-- System should display trending civic issues dashboard
-- System should send predictive maintenance alerts
-- System should perform sentiment analysis of complaints
+#### Acceptance Criteria
 
-#### 7. Notification System
-- System should send SMS updates for feature phone users
-- System should send WhatsApp notifications
-- System should send email summaries
-- System should send push notifications on mobile
-- System should alert on status changes and resolution confirmations
+1. WHEN location data is provided, THE Portal_Router SHALL identify the correct government jurisdiction (municipal, state, or central)
+2. WHEN damage type is classified, THE Portal_Router SHALL select the appropriate reporting category within the identified portal
+3. IF multiple portals are applicable, THE Portal_Router SHALL prioritize based on response time history and effectiveness metrics
+4. WHEN portal selection is complete, THE Portal_Router SHALL provide user with portal name and expected response timeline
+5. WHERE no suitable portal is found, THE Portal_Router SHALL suggest alternative reporting channels
 
-#### 8. Citizen Dashboard
-- User can view all their complaints in one place
-- User can download complaint PDFs
-- User can track multiple applications simultaneously
-- User can access saved form drafts
-- User can store documents in repository
-- User can provide feedback and ratings
+### Requirement 3: Automated Form Filling
 
-#### 9. Analytics & Insights
-- System should display area-wise complaint heatmap
-- System should show response time statistics
-- System should track department performance metrics
-- User can view most common issues in their locality
-- System should display resolution rate tracking
-- System should show community impact reports
+**User Story:** As a busy professional, I want the system to automatically fill government forms, so that I can report issues without spending 15+ minutes on manual data entry.
 
-#### 10. Offline Support
-- System should support SMS-based complaint registration
-- System should allow offline data collection with sync
-- System should integrate with call-based IVR system
-- System should work on low bandwidth (2G/3G)
+#### Acceptance Criteria
 
-### AI/ML Requirements
-- **Model Type**: 
-  - Conversational AI (NLU, Intent Classification, Entity Extraction)
-  - Computer Vision (Image Classification, Object Detection, Damage Assessment)
-  - Natural Language Processing (Multilingual Translation, Sentiment Analysis)
-  - Speech Processing (Speech-to-Text, Text-to-Speech)
-- **Training Data**: 
-  - Government complaint datasets
-  - Civic issue images (potholes, garbage, infrastructure damage)
-  - Multilingual conversation datasets
-  - Government form templates and requirements
-- **Accuracy Target**: 
-  - Intent classification: >90% accuracy
-  - Image classification: >85% accuracy
-  - Language translation: >95% accuracy
-  - Speech recognition: >90% accuracy
-- **Inference Time**: 
-  - Conversational response: <2 seconds
-  - Image analysis: <3 seconds
-  - Form validation: <1 second
+1. WHEN a government portal is accessed, THE Web_Bridge_Agent SHALL visually identify form fields using computer vision
+2. WHEN form fields are detected, THE Web_Bridge_Agent SHALL populate fields with extracted evidence data
+3. WHEN encountering dropdown menus or selection fields, THE Web_Bridge_Agent SHALL choose appropriate options based on damage classification
+4. IF form validation errors occur, THE Web_Bridge_Agent SHALL correct entries and retry submission
+5. WHILE filling forms, THE Web_Bridge_Agent SHALL maintain session state and handle timeouts gracefully
 
-### AWS Services Integration
-- **Compute**: 
-  - AWS EC2 / ECS (Container Orchestration)
-  - AWS Lambda (Serverless functions for event-driven tasks)
-  - Kubernetes (K8s) for auto-scaling
-- **Storage**: 
-  - Amazon S3 (Images, documents, PDF reports)
-  - PostgreSQL on RDS (User data, complaints, forms)
-  - MongoDB (Conversations, chat history, logs)
-  - Redis Cache (Session data, real-time data)
-  - Elasticsearch (Full-text search, analytics)
-- **AI/ML**: 
-  - AWS Bedrock / Anthropic Claude API (Conversational AI, NLU)
-  - AWS Rekognition (Image classification, damage assessment)
-  - AWS Translate (Multilingual support)
-  - AWS Transcribe (Speech-to-Text)
-  - AWS Polly (Text-to-Speech)
-- **Other Services**: 
-  - AWS API Gateway (API management, rate limiting)
-  - AWS CloudFront (CDN for static assets)
-  - AWS CloudWatch (Monitoring and logging)
-  - AWS WAF (Web Application Firewall)
-  - AWS Route 53 (DNS management)
-  - AWS SES (Email notifications)
-  - Apache Kafka (Event streaming, message queue)
+### Requirement 4: Privacy Protection and PII Redaction
 
-## Non-Functional Requirements
+**User Story:** As a privacy-conscious citizen, I want my personal information automatically protected, so that I can report issues without compromising my privacy.
 
-### Performance
-- **Response Time**: 
-  - API calls: <500ms
-  - Conversational AI response: <2 seconds
-  - Image processing: <3 seconds
-  - Page load time: <2 seconds
-- **Throughput**: 
-  - Support 10,000+ concurrent users
-  - Handle 1 million+ complaints per month
-  - Process 500+ requests per second
-- **Availability**: 99.9% uptime (24/7 availability)
+#### Acceptance Criteria
 
-### Scalability
-- Handle 30,000+ requests per minute during peak hours
-- Auto-scaling based on demand using Kubernetes
-- Support for multiple regions across India
-- Horizontal scaling for application servers
-- Database read replicas for load distribution
-- CDN for static content delivery
+1. WHEN processing video content, THE Privacy_Engine SHALL automatically detect and blur human faces
+2. WHEN vehicle license plates are visible, THE Privacy_Engine SHALL redact plate numbers while preserving vehicle context
+3. WHEN audio contains personal information, THE Privacy_Engine SHALL remove or mask sensitive details
+4. WHEN storing processed media, THE Privacy_Engine SHALL encrypt data using industry-standard encryption
+5. WHERE PII detection confidence is low, THE Privacy_Engine SHALL flag content for human review
 
-### Security
-- Data encryption in transit (TLS 1.3) and at rest (AES-256)
-- JWT-based authentication and authorization
-- OTP verification for user registration
-- Aadhaar authentication (optional)
-- Compliance with IT Act 2000 and GDPR
-- Secure API endpoints with rate limiting
-- End-to-end encryption for sensitive data
-- Regular security audits
-- Data anonymization for anonymous complaints
+### Requirement 5: Human-in-the-Loop Verification
 
-### Usability
-- Zero learning curve - as simple as chatting with a friend
-- Voice-first interface requiring no technical knowledge
-- Mobile-responsive Progressive Web App (PWA)
-- Multi-language support (12+ Indian languages)
-- Accessibility compliance (screen reader compatible, high contrast mode)
-- Works on low-end devices and 2G/3G networks
-- No app installation required (web-based)
-- SMS and IVR support for feature phones
+**User Story:** As a user who wants control over submissions, I want to review and approve the filled form before submission, so that I can ensure accuracy and maintain accountability.
 
-## Technical Constraints
-- **Budget**: AWS Free Tier + Hackathon credits
-- **Timeline**: Hackathon duration (MVP in 48-72 hours)
-- **Technology Stack**: 
-  - Frontend: React.js, Tailwind CSS, PWA
-  - Backend: Node.js/Express, Python/FastAPI
-  - AI/ML: AWS Bedrock (Claude), AWS Rekognition, AWS Translate
-  - Database: PostgreSQL, MongoDB, Redis
-  - Infrastructure: AWS EC2/ECS, Docker, Kubernetes
-- **Team Size**: Hackathon team (2-5 members)
+#### Acceptance Criteria
 
-## Success Criteria
-1. **Time Efficiency**: 90% reduction in time to file complaints (from 30 minutes to 3 minutes)
-2. **Accessibility**: 70% increase in complaint registration from rural areas
-3. **User Satisfaction**: 85% user satisfaction rate
-4. **Accuracy**: 60% reduction in incomplete submissions
-5. **Multilingual Reach**: Support for 400+ million non-English speakers
-6. **Response Time**: Real-time departmental accountability with status tracking
-7. **Adoption**: 10,000+ users within first 3 months of launch
-8. **Resolution Rate**: 80% complaint resolution within committed timelines
+1. WHEN form filling is 90% complete, THE Human_Loop_Interface SHALL present filled form to user for review
+2. WHEN user reviews the form, THE Human_Loop_Interface SHALL highlight auto-filled fields and allow modifications
+3. WHEN CAPTCHA or human verification is required, THE Human_Loop_Interface SHALL transfer control to user's mobile device
+4. WHEN user approves the form, THE Human_Loop_Interface SHALL enable final submission with user authentication
+5. IF user rejects auto-filled data, THE Human_Loop_Interface SHALL allow manual corrections and re-processing
 
-## Out of Scope (Phase 1)
-- Payment processing for government fees
-- Video call support with officials
-- Peer-to-peer community forums
-- Gamification features (civic participation badges)
-- Integration with all state government portals (limited to pilot states)
-- Advanced analytics dashboard for citizens
-- Mobile native apps (iOS/Android) - PWA only in Phase 1
+### Requirement 6: Multi-Language Support
 
-## Future Enhancements (Phase 2)
-- AI chatbot for FAQs about government schemes
-- Virtual queue for government office visits
-- Document verification assistance
-- Appointment booking with officials
-- Integration with DigiLocker
-- Peer-to-peer community forums
-- Gamification (civic participation badges)
-- Blockchain-based complaint verification
+**User Story:** As a rural citizen who speaks primarily in my regional language, I want to interact with the system in my native language, so that language barriers don't prevent me from reporting civic issues.
 
-## Dependencies
-- **External APIs**: 
-  - Anthropic Claude API (AWS Bedrock)
-  - Google Translate API / AWS Translate
-  - Google Vision API / AWS Rekognition
-  - Google Speech-to-Text / AWS Transcribe
-  - AWS Polly (Text-to-Speech)
-  - Twilio / MSG91 (SMS Gateway)
-  - WhatsApp Business API
-  - SendGrid / AWS SES (Email)
-  - Google Maps / MapMyIndia (GIS)
-  - UIDAI API (Aadhaar Authentication)
-  - Government Portal APIs (MyGov, State Portals)
-- **Data Sources**: 
-  - Government complaint categories and workflows
-  - Civic issue image datasets for training
-  - Government form templates
-  - Department contact information and routing rules
-- **Hardware**: 
-  - Cloud infrastructure (AWS)
-  - No special client-side hardware requirements
-  - Works on feature phones via SMS/IVR
+#### Acceptance Criteria
 
-## Assumptions
-- Users have access to mobile phones (smartphone or feature phone)
-- Basic internet connectivity available (2G/3G minimum)
-- Government departments have email/portal access for complaint routing
-- Citizens are willing to provide phone number for OTP verification
-- Government APIs are available for integration (or manual routing as fallback)
-- Image uploads are limited to 5MB per photo
-- Users consent to location tracking for complaint geo-tagging
-- SMS gateway costs are within budget constraints
+1. THE Bedrock_Analysis_Agent SHALL support Hindi, Tamil, Telugu, Bengali, Marathi, Gujarati, Kannada, Malayalam, Punjabi, Odia, and other Indian regional languages
+2. WHEN voice input is provided, THE Bedrock_Analysis_Agent SHALL detect and process language automatically using advanced language understanding
+3. WHEN transcribing regional language audio, THE Bedrock_Analysis_Agent SHALL handle local dialects and accents through contextual understanding
+4. WHEN displaying interface elements, THE RoadFix_AI SHALL present text in user's preferred language
+5. WHERE translation is required for government forms, THE Bedrock_Analysis_Agent SHALL maintain semantic accuracy using contextual translation
 
-## Risks and Mitigation
-| Risk | Impact | Probability | Mitigation Strategy |
-|------|--------|-------------|-------------------|
-| Government API integration delays | High | High | Build manual routing fallback, email-based forwarding |
-| AI model accuracy issues | High | Medium | Implement human-in-the-loop validation, continuous training |
-| High SMS costs at scale | Medium | High | Prioritize WhatsApp/email, SMS only for critical updates |
-| Low adoption in rural areas | High | Medium | Partner with local NGOs, offline SMS/IVR support |
-| Data privacy concerns | High | Low | End-to-end encryption, GDPR compliance, transparent policies |
-| Server overload during peak | Medium | Medium | Auto-scaling, load balancing, CDN for static content |
-| Multilingual translation errors | Medium | Medium | Human review for critical forms, user feedback loop |
-| Spam/fake complaints | Medium | High | OTP verification, duplicate detection, rate limiting |
+### Requirement 7: Offline Capability and Connectivity Handling
 
-## Acceptance Criteria
-- [ ] Conversational AI successfully handles complaint registration in 3+ languages
-- [ ] Image upload and AI-based classification working with >85% accuracy
-- [ ] Form filling assistant supports at least 5 common government forms
-- [ ] Real-time tracking system with unique reference numbers functional
-- [ ] SMS/WhatsApp notifications working
-- [ ] Response time <2 seconds for conversational AI
-- [ ] PWA installable and works offline
-- [ ] Admin dashboard for complaint management operational
-- [ ] End-to-end encryption and OTP authentication implemented
-- [ ] Performance requirements met (10,000 concurrent users)
-- [ ] Security audit passed
-- [ ] Documentation complete (API docs, user guide, deployment guide)
-- [ ] Demo ready with sample complaints and resolution workflow
-- [ ] Presentation deck and video demo prepared
+**User Story:** As a user in areas with poor internet connectivity, I want to capture evidence offline and sync when connection is available, so that connectivity issues don't prevent damage reporting.
+
+#### Acceptance Criteria
+
+1. WHEN internet connectivity is unavailable, THE Evidence_Capture_Module SHALL store video and voice data locally
+2. WHEN connectivity is restored, THE RoadFix_AI SHALL automatically sync stored evidence to cloud processing
+3. WHEN processing requires internet but connection is poor, THE RoadFix_AI SHALL provide estimated wait times and progress indicators
+4. WHERE offline storage reaches capacity limits, THE Evidence_Capture_Module SHALL compress older files or prompt user for cleanup
+5. WHILE offline, THE RoadFix_AI SHALL provide clear indicators of offline status and pending sync items
+
+### Requirement 8: Real-Time Processing and Performance
+
+**User Story:** As a mobile user with limited time, I want the system to process my report quickly, so that I can complete reporting within 3 minutes total time.
+
+#### Acceptance Criteria
+
+1. WHEN video is uploaded, THE Bedrock_Analysis_Agent SHALL complete analysis within 30 seconds for files under 100MB
+2. WHEN voice transcription is requested, THE Bedrock_Analysis_Agent SHALL provide results within 15 seconds for clips under 2 minutes
+3. WHEN form filling begins, THE Web_Bridge_Agent SHALL complete 90% of fields within 60 seconds
+4. WHERE processing takes longer than expected, THE RoadFix_AI SHALL provide progress updates every 10 seconds
+5. IF processing fails, THE RoadFix_AI SHALL provide clear error messages and alternative options
+
+### Requirement 9: Cross-Platform Mobile Compatibility
+
+**User Story:** As a smartphone user on various devices and operating systems, I want consistent functionality across platforms, so that I can use the service regardless of my device choice.
+
+#### Acceptance Criteria
+
+1. THE RoadFix_AI SHALL function on Android devices running version 8.0 and above
+2. THE RoadFix_AI SHALL function on iOS devices running version 12.0 and above
+3. WHEN accessing through mobile browsers, THE RoadFix_AI SHALL provide responsive design optimized for screen sizes 4-7 inches
+4. WHEN using device cameras, THE RoadFix_AI SHALL support standard video formats (MP4, MOV, AVI) up to 4K resolution
+5. WHERE device storage is limited, THE RoadFix_AI SHALL provide compression options and cloud storage alternatives
+
+### Requirement 10: Security and Compliance
+
+**User Story:** As a citizen concerned about data security, I want my information protected according to Indian data protection laws, so that I can trust the system with sensitive location and personal data.
+
+#### Acceptance Criteria
+
+1. THE RoadFix_AI SHALL comply with Digital Personal Data Protection Act (DPDP) 2023 requirements
+2. WHEN collecting user data, THE RoadFix_AI SHALL obtain explicit consent with clear privacy policy disclosure
+3. WHEN storing data, THE RoadFix_AI SHALL use AES-256 encryption for data at rest and TLS 1.3 for data in transit
+4. WHEN user requests data deletion, THE RoadFix_AI SHALL permanently remove all associated data within 30 days
+5. WHERE data is shared with government portals, THE RoadFix_AI SHALL log all transfers and provide user notification
+
+### Requirement 11: Damage Assessment Accuracy
+
+**User Story:** As a government official reviewing reports, I want accurate damage classification and severity assessment, so that I can prioritize repairs effectively and allocate resources appropriately.
+
+#### Acceptance Criteria
+
+1. WHEN analyzing road damage, THE Bedrock_Analysis_Agent SHALL identify damage type using advanced LLM visual analysis capabilities
+2. WHEN assessing severity, THE Bedrock_Analysis_Agent SHALL categorize damage as Low, Medium, High, or Critical with consistent criteria
+3. WHEN multiple damage types are present, THE Bedrock_Analysis_Agent SHALL identify and report all significant issues
+4. WHERE damage assessment confidence is uncertain, THE Bedrock_Analysis_Agent SHALL flag for human expert review
+5. WHILE processing images, THE Bedrock_Analysis_Agent SHALL handle various lighting conditions, angles, and weather scenarios
+
+### Requirement 12: System Monitoring and Analytics
+
+**User Story:** As a system administrator, I want comprehensive monitoring and analytics, so that I can ensure system reliability and identify improvement opportunities.
+
+#### Acceptance Criteria
+
+1. THE RoadFix_AI SHALL log all user interactions, processing times, and system performance metrics
+2. WHEN system errors occur, THE RoadFix_AI SHALL capture detailed error logs with context for debugging
+3. WHEN reports are successfully submitted, THE RoadFix_AI SHALL track submission status and government portal response times
+4. WHERE usage patterns indicate system bottlenecks, THE RoadFix_AI SHALL generate alerts for capacity planning
+5. WHILE maintaining user privacy, THE RoadFix_AI SHALL provide aggregated analytics on damage types, locations, and reporting trends
