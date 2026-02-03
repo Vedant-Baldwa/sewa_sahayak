@@ -1,8 +1,8 @@
-# Design Document: RoadFix AI
+# Design Document: Seva Sahayak
 
 ## Overview
 
-RoadFix AI is a civic-tech solution that leverages Amazon Bedrock's multi-modal AI capabilities to automate road damage reporting to Indian government portals. The system addresses the "Reporting Wall" problem by acting as an intelligent intermediary that processes citizen-submitted evidence (video/voice) and automatically fills government forms using agentic web automation.
+Seva Sahayak is a civic-tech solution that leverages Amazon Bedrock's multi-modal AI capabilities to automate road damage reporting to Indian government portals. The system addresses the "Reporting Wall" problem by acting as an intelligent intermediary that processes citizen-submitted evidence (video/voice) and automatically fills government forms using agentic web automation.
 
 The system combines Amazon Bedrock LLMs for multi-modal analysis with Amazon Nova Act for browser automation, creating a seamless bridge between citizens and government reporting systems. By reducing reporting time from 15+ minutes to under 3 minutes, the system aims to increase civic participation in infrastructure maintenance.
 
@@ -397,7 +397,7 @@ Now I need to use the prework tool to analyze the acceptance criteria before wri
 
 *A property is a characteristic or behavior that should hold true across all valid executions of a system—essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
 
-Based on the prework analysis of acceptance criteria, the following properties ensure the correctness of RoadFix AI across all valid inputs and scenarios:
+Based on the prework analysis of acceptance criteria, the following properties ensure the correctness of Seva Sahayak across all valid inputs and scenarios:
 
 ### Property 1: Multi-modal Evidence Processing
 *For any* combination of video and voice input with location data, the Evidence Capture Module and Bedrock Analysis Agent should successfully extract GPS coordinates, timestamp, damage assessment, and relevant details from voice content, producing a complete evidence record.
@@ -549,7 +549,7 @@ Together, unit tests and property tests provide complementary coverage—unit te
 **Test Configuration**:
 - Minimum 100 iterations per property test (due to randomization)
 - Each property test references its corresponding design document property
-- Tag format: **Feature: roadfix-ai, Property {number}: {property_text}**
+- Tag format: **Feature: seva-sahayak, Property {number}: {property_text}**
 
 **Property Test Implementation Requirements**:
 - Each correctness property must be implemented by a single property-based test

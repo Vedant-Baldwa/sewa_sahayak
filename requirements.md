@@ -2,11 +2,11 @@
 
 ## Introduction
 
-RoadFix AI is a civic-tech solution that automates the reporting of road damages (potholes, cracks, surface deterioration) to various Indian government portals. The system addresses the "Reporting Wall" problem where citizens struggle to navigate 40+ different government portals to report road issues, reducing reporting time from 15+ minutes to under 3 minutes through AI-powered automation and multi-modal input processing.
+Seva Sahayak is a civic-tech solution that automates the reporting of road damages (potholes, cracks, surface deterioration) to various Indian government portals. The system addresses the "Reporting Wall" problem where citizens struggle to navigate 40+ different government portals to report road issues, reducing reporting time from 15+ minutes to under 3 minutes through AI-powered automation and multi-modal input processing.
 
 ## Glossary
 
-- **RoadFix_AI**: The complete AI assistant system for automated road damage reporting
+- **Seva_Sahayak**: The complete AI assistant system for automated road damage reporting
 - **Evidence_Capture_Module**: Component that processes video, voice, and location data
 - **Web_Bridge_Agent**: AI agent that automates form filling on government websites
 - **Human_Loop_Interface**: User verification and control interface
@@ -86,7 +86,7 @@ RoadFix AI is a civic-tech solution that automates the reporting of road damages
 1. THE Bedrock_Analysis_Agent SHALL support Hindi, Tamil, Telugu, Bengali, Marathi, Gujarati, Kannada, Malayalam, Punjabi, Odia, and other Indian regional languages
 2. WHEN voice input is provided, THE Bedrock_Analysis_Agent SHALL detect and process language automatically using advanced language understanding
 3. WHEN transcribing regional language audio, THE Bedrock_Analysis_Agent SHALL handle local dialects and accents through contextual understanding
-4. WHEN displaying interface elements, THE RoadFix_AI SHALL present text in user's preferred language
+4. WHEN displaying interface elements, THE Seva_Sahayak SHALL present text in user's preferred language
 5. WHERE translation is required for government forms, THE Bedrock_Analysis_Agent SHALL maintain semantic accuracy using contextual translation
 
 ### Requirement 7: Offline Capability and Connectivity Handling
@@ -96,10 +96,10 @@ RoadFix AI is a civic-tech solution that automates the reporting of road damages
 #### Acceptance Criteria
 
 1. WHEN internet connectivity is unavailable, THE Evidence_Capture_Module SHALL store video and voice data locally
-2. WHEN connectivity is restored, THE RoadFix_AI SHALL automatically sync stored evidence to cloud processing
-3. WHEN processing requires internet but connection is poor, THE RoadFix_AI SHALL provide estimated wait times and progress indicators
+2. WHEN connectivity is restored, THE Seva_Sahayak SHALL automatically sync stored evidence to cloud processing
+3. WHEN processing requires internet but connection is poor, THE Seva_Sahayak SHALL provide estimated wait times and progress indicators
 4. WHERE offline storage reaches capacity limits, THE Evidence_Capture_Module SHALL compress older files or prompt user for cleanup
-5. WHILE offline, THE RoadFix_AI SHALL provide clear indicators of offline status and pending sync items
+5. WHILE offline, THE Seva_Sahayak SHALL provide clear indicators of offline status and pending sync items
 
 ### Requirement 8: Real-Time Processing and Performance
 
@@ -110,8 +110,8 @@ RoadFix AI is a civic-tech solution that automates the reporting of road damages
 1. WHEN video is uploaded, THE Bedrock_Analysis_Agent SHALL complete analysis within 30 seconds for files under 100MB
 2. WHEN voice transcription is requested, THE Bedrock_Analysis_Agent SHALL provide results within 15 seconds for clips under 2 minutes
 3. WHEN form filling begins, THE Web_Bridge_Agent SHALL complete 90% of fields within 60 seconds
-4. WHERE processing takes longer than expected, THE RoadFix_AI SHALL provide progress updates every 10 seconds
-5. IF processing fails, THE RoadFix_AI SHALL provide clear error messages and alternative options
+4. WHERE processing takes longer than expected, THE Seva_Sahayak SHALL provide progress updates every 10 seconds
+5. IF processing fails, THE Seva_Sahayak SHALL provide clear error messages and alternative options
 
 ### Requirement 9: Cross-Platform Mobile Compatibility
 
@@ -119,11 +119,11 @@ RoadFix AI is a civic-tech solution that automates the reporting of road damages
 
 #### Acceptance Criteria
 
-1. THE RoadFix_AI SHALL function on Android devices running version 8.0 and above
-2. THE RoadFix_AI SHALL function on iOS devices running version 12.0 and above
-3. WHEN accessing through mobile browsers, THE RoadFix_AI SHALL provide responsive design optimized for screen sizes 4-7 inches
-4. WHEN using device cameras, THE RoadFix_AI SHALL support standard video formats (MP4, MOV, AVI) up to 4K resolution
-5. WHERE device storage is limited, THE RoadFix_AI SHALL provide compression options and cloud storage alternatives
+1. THE Seva_Sahayak SHALL function on Android devices running version 8.0 and above
+2. THE Seva_Sahayak SHALL function on iOS devices running version 12.0 and above
+3. WHEN accessing through mobile browsers, THE Seva_Sahayak SHALL provide responsive design optimized for screen sizes 4-7 inches
+4. WHEN using device cameras, THE Seva_Sahayak SHALL support standard video formats (MP4, MOV, AVI) up to 4K resolution
+5. WHERE device storage is limited, THE Seva_Sahayak SHALL provide compression options and cloud storage alternatives
 
 ### Requirement 10: Security and Compliance
 
@@ -131,11 +131,11 @@ RoadFix AI is a civic-tech solution that automates the reporting of road damages
 
 #### Acceptance Criteria
 
-1. THE RoadFix_AI SHALL comply with Digital Personal Data Protection Act (DPDP) 2023 requirements
-2. WHEN collecting user data, THE RoadFix_AI SHALL obtain explicit consent with clear privacy policy disclosure
-3. WHEN storing data, THE RoadFix_AI SHALL use AES-256 encryption for data at rest and TLS 1.3 for data in transit
-4. WHEN user requests data deletion, THE RoadFix_AI SHALL permanently remove all associated data within 30 days
-5. WHERE data is shared with government portals, THE RoadFix_AI SHALL log all transfers and provide user notification
+1. THE Seva_Sahayak SHALL comply with Digital Personal Data Protection Act (DPDP) 2023 requirements
+2. WHEN collecting user data, THE Seva_Sahayak SHALL obtain explicit consent with clear privacy policy disclosure
+3. WHEN storing data, THE Seva_Sahayak SHALL use AES-256 encryption for data at rest and TLS 1.3 for data in transit
+4. WHEN user requests data deletion, THE Seva_Sahayak SHALL permanently remove all associated data within 30 days
+5. WHERE data is shared with government portals, THE Seva_Sahayak SHALL log all transfers and provide user notification
 
 ### Requirement 11: Damage Assessment Accuracy
 
@@ -155,8 +155,8 @@ RoadFix AI is a civic-tech solution that automates the reporting of road damages
 
 #### Acceptance Criteria
 
-1. THE RoadFix_AI SHALL log all user interactions, processing times, and system performance metrics
-2. WHEN system errors occur, THE RoadFix_AI SHALL capture detailed error logs with context for debugging
-3. WHEN reports are successfully submitted, THE RoadFix_AI SHALL track submission status and government portal response times
-4. WHERE usage patterns indicate system bottlenecks, THE RoadFix_AI SHALL generate alerts for capacity planning
-5. WHILE maintaining user privacy, THE RoadFix_AI SHALL provide aggregated analytics on damage types, locations, and reporting trends
+1. THE Seva_Sahayak SHALL log all user interactions, processing times, and system performance metrics
+2. WHEN system errors occur, THE Seva_Sahayak SHALL capture detailed error logs with context for debugging
+3. WHEN reports are successfully submitted, THE Seva_Sahayak SHALL track submission status and government portal response times
+4. WHERE usage patterns indicate system bottlenecks, THE Seva_Sahayak SHALL generate alerts for capacity planning
+5. WHILE maintaining user privacy, THE Seva_Sahayak SHALL provide aggregated analytics on damage types, locations, and reporting trends
