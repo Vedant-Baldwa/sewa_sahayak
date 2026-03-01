@@ -26,3 +26,6 @@ dist-ssr
 # Python Backend
 backend/venv/
 backend/__pycache__/
+backend/.env
+backend/test_audio.mp3
+backend/temp/
