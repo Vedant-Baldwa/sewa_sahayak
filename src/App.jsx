@@ -38,6 +38,21 @@ function App() {
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
       Notification.requestPermission();
     }
+
+    // Check for active OAuth session
+    const checkSession = async () => {
+      const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/auth/me`, { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setUser({ ...data.user, userData: data.userData, token: data.token });
+        }
+      } catch (err) {
+        console.warn("No active session or backend unavailable.");
+      }
+    };
+    checkSession();
   }, [isOnline]);
 
   const syncOfflineData = async () => {
