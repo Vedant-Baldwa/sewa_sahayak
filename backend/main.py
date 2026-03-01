@@ -62,13 +62,16 @@ BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 try:
     s3_client = boto3.client('s3', region_name=AWS_REGION)
     cognito_client = boto3.client('cognito-idp', region_name=AWS_REGION)
+    # Nova models are currently not available in ap-south-1. Overriding to us-east-1.
+    bedrock_region = "us-east-1"
+    bedrock_runtime = boto3.client('bedrock-runtime', region_name=bedrock_region)
     dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
     reports_table = dynamodb.Table(DYNAMODB_TABLE_NAME)
     users_table = dynamodb.Table(USERS_TABLE_NAME)
-    print("AWS Services (S3, Cognito, DynamoDB) configured successfully.")
+    print(f"AWS Services (S3, Cognito, Bedrock in {bedrock_region}, DynamoDB) configured successfully.")
 except Exception as e:
     print(f"Warning: Failed to initialize AWS clients. Ensure credentials are set. Error: {e}")
-    s3_client, cognito_client, reports_table, users_table = None, None, None, None
+    s3_client, cognito_client, bedrock_runtime, reports_table, users_table = None, None, None, None, None
 
 # --- Engineer 1: Identity & Authorization (OAuth 2.0 Hosted UI) ---
 
@@ -197,18 +200,86 @@ async def mock_transcribe(audio: UploadFile = File(...)):
         "piiRedacted": True
     }
 
-# Feature 3 Endpoint
+# Feature 3 Endpoint (Live Bedrock Nova Pro)
 @app.post("/api/analyze")
-async def mock_analyze(media: UploadFile = File(...), type: str = Form(...)):
-    print(f"[Amazon Bedrock Nova Pro] Started visual analysis for: {type}")
-    time.sleep(2.0) # Simulate LLM analysis
-    return {
-        "damage_type": "pothole",
-        "severity": "high",
-        "confidence_score": 0.98,
-        "suggested_description": "Deep pothole identified on asphalt road surface. Edges are jagged indicating recent widening. Poses immediate risk to two-wheelers.",
-        "bounding_box": {"x": 0.2, "y": 0.4, "w": 0.5, "h": 0.3}
-    }
+async def analyze_media(media: UploadFile = File(...), type: str = Form(...)):
+    if not bedrock_runtime:
+        print(f"[Mock Bedrock Nova Pro] Visual analysis for: {type}")
+        time.sleep(1.0)
+        return {
+            "damage_type": "pothole",
+            "severity": "high",
+            "confidence_score": 0.95,
+            "suggested_description": "Mock analysis of identified issue.",
+            "bounding_box": {"x": 0.2, "y": 0.4, "w": 0.5, "h": 0.3}
+        }
+    
+    try:
+        content = await media.read()
+        model_id = os.getenv("ANALYSIS_MODEL_ID", "amazon.nova-pro-v1:0")
+        
+        print(f"Calling Bedrock {model_id} for analysis...")
+        
+        # Determine format for multimodal block
+        ext = media.filename.split('.')[-1].lower() if '.' in media.filename else ""
+        if ext == "jpg": ext = "jpeg"
+        
+        media_block = {}
+        if "image" in media.content_type or ext in ["jpg", "jpeg", "png", "webp"]:
+            media_block = {
+                "image": {
+                    "format": ext if ext in ["jpeg", "png", "webp", "gif"] else "jpeg",
+                    "source": {"bytes": content}
+                }
+            }
+        else:
+            media_block = {
+                "video": {
+                    "format": ext if ext in ["mp4", "mkv", "mov", "webm"] else "mp4",
+                    "source": {"bytes": content}
+                }
+            }
+            
+        message = {
+            "role": "user",
+            "content": [
+                media_block,
+                {
+                    "text": "Analyze this civic issue. Provide a concise 1-2 sentence summary of what is happening. Identify the damage_type (e.g. pothole, broken pipe, etc.) and severity (low, medium, high). Return ONLY JSON with fields: { 'damage_type': string, 'severity': string, 'confidence': float, 'suggested_description': string }. Ensure the summary is empathetic and professional."
+                }
+            ]
+        }
+        
+        import json
+        response = bedrock_runtime.converse(
+            modelId=model_id,
+            messages=[message],
+            inferenceConfig={"maxTokens": 512, "temperature": 0.1}
+        )
+        
+        raw_output = response['output']['message']['content'][0]['text']
+        print(f"Bedrock Raw Analysis Output: {raw_output}")
+        
+        # Extract JSON from markdown if exists
+        if "```json" in raw_output:
+            raw_output = raw_output.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw_output:
+            raw_output = raw_output.split("```")[1].split("```")[0].strip()
+            
+        analysis = json.loads(raw_output)
+        
+        return {
+            "damage_type": analysis.get("damage_type", "Unknown"),
+            "severity": analysis.get("severity", "Medium"),
+            "confidence_score": analysis.get("confidence", 0.9),
+            "suggested_description": analysis.get("suggested_description", ""),
+            "bounding_box": {"x": 0, "y": 0, "w": 0, "h": 0} 
+        }
+        
+    except Exception as e:
+        print(f"Bedrock Analysis Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 # Feature 4 Endpoint
 @app.post("/api/redact")
@@ -235,26 +306,69 @@ class DraftRequest(BaseModel):
     lat: float | str | None = None
     lng: float | str | None = None
 
-# Feature 6 Endpoint
+# Feature 6 Endpoint (Live Bedrock Draft Compilation)
 @app.post("/api/draft")
-async def mock_generate_draft(data: dict):
-    print(f"[Amazon Bedrock] Generating draft for data: {data}")
-    time.sleep(2.0)
-    
-    analysis_desc = data.get("analysis", {}).get("suggested_description", "")
-    transcript_desc = data.get("transcription", {}).get("transcript", "")
-    
-    description = analysis_desc or ("Voice Report: " + transcript_desc) or "Observed civic issue."
-    
-    return {
-        "applicantName": "A Citizen",
-        "phoneNumber": "+91-9876543210",
-        "damageType": data.get("analysis", {}).get("damage_type") or "Civic Issue",
-        "severity": data.get("analysis", {}).get("severity") or "Medium",
-        "jurisdiction": data.get("jurisdiction", {}).get("portal_name") or "Municipal Corporation",
-        "ward": data.get("jurisdiction", {}).get("ward_district") or "Default Ward",
-        "description": f"To the concerned authority,\n\nI am reporting a issue regarding civic hazard.\n\nDetails:\n{description}\n\nPlease address this at your earliest convenience.\n\nThank you.",
-    }
+async def generate_draft(data: dict):
+    if not bedrock_runtime:
+        print(f"[Mock Bedrock] Generating draft for data: {data}")
+        time.sleep(1.0)
+        return {
+            "applicantName": "A Citizen",
+            "phoneNumber": "+91-9876543210",
+            "damageType": "Civic Issue",
+            "severity": "Medium",
+            "jurisdiction": "Municipal Corp",
+            "ward": "Default Ward",
+            "description": "Mock draft content.",
+        }
+
+    try:
+        model_id = os.getenv("DRAFT_MODEL_ID", "amazon.nova-pro-v1:0")
+        print(f"Calling Bedrock {model_id} for draft generation...")
+        
+        prompt = f"""
+        Generate a formal civic complaint application based on the following data:
+        - Jurisdiction/Authority: {data.get('jurisdiction')}
+        - AI Visual Analysis: {data.get('analysis')}
+        - Voice Transcription: {data.get('transcription')}
+        - Citizen Input: {data.get('description', 'N/A')}
+        
+        The letter should be professional, respectful, and include all relevant details to help the authority resolve the issue. 
+        Summarize the situation clearly in the 'description' field.
+        
+        Return ONLY valid JSON with EXACTLY these fields:
+        {{
+            "applicantName": "string",
+            "phoneNumber": "string",
+            "damageType": "string",
+            "severity": "string",
+            "jurisdiction": "string",
+            "ward": "string",
+            "description": "string (full formal letter text)"
+        }}
+        """
+        
+        response = bedrock_runtime.converse(
+            modelId=model_id,
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={"temperature": 0.7}
+        )
+        
+        import json
+        raw_draft = response['output']['message']['content'][0]['text']
+        print(f"Bedrock Raw Draft Output: {raw_draft}")
+        
+        if "```json" in raw_draft:
+            raw_draft = raw_draft.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw_draft:
+            raw_draft = raw_draft.split("```")[1].split("```")[0].strip()
+            
+        return json.loads(raw_draft)
+        
+    except Exception as e:
+        print(f"Draft Generation Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Draft generation failed: {str(e)}")
 
 # Serve static assets from Vite dist folder
 app.mount("/assets", StaticFiles(directory="../dist/assets"), name="assets")
