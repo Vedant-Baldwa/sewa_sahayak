@@ -30,7 +30,7 @@ export const getDeviceLocation = async () => {
                     timestamp: Date.now()
                 });
             },
-            { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 } // Increased timeout to 15s
         );
     });
 };
@@ -61,4 +61,55 @@ export const mapJurisdiction = (lat, lng) => {
         ward_district: "Highway Division 4",
         mapped_coordinates: { lat, lng }
     };
+};
+
+// --- NEW RE-TIME TRACKING FEATURE ---
+export const watchDeviceLocation = (onSuccess, onError) => {
+    if (!navigator.geolocation) {
+        onError(new Error("Geolocation not supported"));
+        return null;
+    }
+
+    return navigator.geolocation.watchPosition(
+        (position) => {
+            onSuccess({
+                lat: position.coords.latitude,
+                lng: position.coords.longitude,
+                accuracy: position.coords.accuracy,
+                timestamp: position.timestamp
+            });
+        },
+        (err) => onError(err),
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 } // Increased timeout
+    );
+};
+
+// --- Reverse Geocoding for City Name ---
+export const getCityName = async (lat, lng) => {
+    // Basic local mapping for quick results if API is slow
+    const isMumbai = lat > 18.5 && lat < 19.5 && lng > 72.5 && lng < 73.5;
+    const isDelhi = lat > 28.3 && lat < 28.9 && lng > 76.8 && lng < 77.5;
+    const isBangalore = lat > 12.8 && lat < 13.1 && lng > 77.4 && lng < 77.7;
+
+    try {
+        // Fetch from OSM with a 4s timeout to prevent hanging UI
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        const data = await response.json();
+
+        const city = data.address.city || data.address.town || data.address.village || data.address.suburb || data.address.state;
+        if (city) return city;
+    } catch (error) {
+        console.warn("Reverse geocoding failed, using local rules:", error);
+    }
+
+    // Fallback if API fails
+    if (isMumbai) return "Mumbai, MH";
+    if (isDelhi) return "New Delhi, DL";
+    if (isBangalore) return "Bengaluru, KA";
+
+    return "Live Location Active";
 };
