@@ -21,10 +21,9 @@ mimetypes.add_type("text/css", ".css")
 app = FastAPI(title="Sewa Sahayak PWA API (Mock)")
 
 # CORS Middleware to allow requests from the Vite frontend
-_frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[_frontend_url, _frontend_url.replace("localhost", "127.0.0.1")],
+    allow_origin_regex=".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -63,16 +62,14 @@ BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 try:
     s3_client = boto3.client('s3', region_name=AWS_REGION)
     cognito_client = boto3.client('cognito-idp', region_name=AWS_REGION)
-    # Nova models are currently not available in ap-south-1. Overriding to us-east-1.
-    bedrock_region = "us-east-1"
-    bedrock_runtime = boto3.client('bedrock-runtime', region_name=bedrock_region)
+    rekognition_client = boto3.client('rekognition', region_name=AWS_REGION)
     dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
     reports_table = dynamodb.Table(DYNAMODB_TABLE_NAME)
     users_table = dynamodb.Table(USERS_TABLE_NAME)
-    print(f"AWS Services (S3, Cognito, Bedrock in {bedrock_region}, DynamoDB) configured successfully. S3 Bucket: {S3_BUCKET_NAME}")
+    print("AWS Services (S3, Cognito, Rekognition, DynamoDB) configured successfully.")
 except Exception as e:
     print(f"Warning: Failed to initialize AWS clients. Ensure credentials are set. Error: {e}")
-    s3_client, cognito_client, bedrock_runtime, reports_table, users_table = None, None, None, None, None
+    s3_client, cognito_client, rekognition_client, reports_table, users_table = None, None, None, None, None
 
 # --- Engineer 1: Identity & Authorization (OAuth 2.0 Hosted UI) ---
 
@@ -97,6 +94,21 @@ async def authorize(request: Request):
                 try:
                     db_response = users_table.get_item(Key={'userId': uuid_sub})
                     user_metadata = db_response.get('Item')
+
+                    # First login — create a new user record
+                    if not user_metadata:
+                        import time as _time
+                        user_metadata = {
+                            'userId':       uuid_sub,
+                            'email':        user.get('email', ''),
+                            'phone_number': user.get('phone_number', ''),
+                            'createdAt':    str(int(_time.time())),
+                        }
+                        users_table.put_item(Item=user_metadata)
+                        print(f"New user created in DynamoDB: {uuid_sub}")
+                    else:
+                        print(f"Returning user found in DynamoDB: {uuid_sub}")
+
                 except Exception as e:
                     print(f"Warning DB: {e}")
             
@@ -106,8 +118,25 @@ async def authorize(request: Request):
     except Exception as e:
         print(f"OAuth Callback Error: {e}")
         # fallback for mock testing without real AWS flow
-        request.session['user'] = {"email": "mock@example.com", "sub": "mock-sub-uuid"}
+        user = {"email": "mock@example.com", "sub": "mock-sub-uuid", "phone_number": "+910000000000"}
+        request.session['user'] = user
         request.session['id_token'] = "mock-token"
+        
+        if users_table:
+            try:
+                import time as _time
+                user_metadata = {
+                    'userId':       user['sub'],
+                    'email':        user['email'],
+                    'phone_number': user['phone_number'],
+                    'createdAt':    str(int(_time.time())),
+                }
+                users_table.put_item(Item=user_metadata)
+                request.session['userData'] = user_metadata
+                print(f"Created mocked user in DynamoDB: {user['sub']}")
+            except Exception as db_e:
+                print(f"Warning DB Mock Insert: {db_e}")
+                
         return RedirectResponse(url=f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/")
         
     return JSONResponse({"error": "Failed to login"}, status_code=400)
@@ -307,21 +336,90 @@ async def analyze_media(media: UploadFile = File(...), type: str = Form(...)):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
+from fastapi.responses import StreamingResponse
+from PIL import Image, ImageDraw
+import io
+
 # Feature 4 Endpoint
 @app.post("/api/redact")
 async def mock_redact(media: UploadFile = File(...)):
     print(f"[Amazon Rekognition] Scanning media for PII...")
-    time.sleep(1.5)
     
-    # Generate a dummy URL that points back to the backend
-    # or a dummy reference since the real file isn't uploaded to S3 yet
-    fake_redacted_path = f"/temp/{uuid.uuid4()}_{media.filename}"
+    # Read the file bytes
+    image_bytes = await media.read()
     
-    return {
-        "redactedFileUrl": fake_redacted_path,
-        "facesRedacted": 2, 
-        "platesRedacted": 1
-    }
+    if not rekognition_client:
+        print("[Mock Rekognition] Returning unredacted mock image because client is None.")
+        return StreamingResponse(io.BytesIO(image_bytes), media_type=media.content_type, headers={
+            "X-Faces-Redacted": "0", "X-Plates-Redacted": "0"
+        })
+        
+    try:
+        # Detect Faces
+        face_response = rekognition_client.detect_faces(Image={'Bytes': image_bytes})
+        faces = face_response.get('FaceDetails', [])
+        
+        # Detect Text
+        text_response = rekognition_client.detect_text(Image={'Bytes': image_bytes})
+        texts = text_response.get('TextDetections', [])
+        
+        # Only care about text lines that look like numbers/plates for this mock
+        # For a full implementation, could check bounding boxes specifically or use Rekognition text categorization
+        plates = [t for t in texts if t['Type'] == 'LINE']
+        
+        # Open Image with Pillow
+        try:
+            image = Image.open(io.BytesIO(image_bytes))
+            draw = ImageDraw.Draw(image)
+            width, height = image.size
+            
+            # Draw black boxes over faces
+            for face in faces:
+                box = face['BoundingBox']
+                left = width * box['Left']
+                top = height * box['Top']
+                right = left + (width * box['Width'])
+                bottom = top + (height * box['Height'])
+                draw.rectangle([left, top, right, bottom], fill="black")
+                
+            # Draw black boxes over text/plates
+            for text in plates:
+                # In a real app we would heuristically check if text resembles A-Z 0-9 license plate
+                # For demonstration, we'll redact all detected LINE texts.
+                box = text['Geometry']['BoundingBox']
+                left = width * box['Left']
+                top = height * box['Top']
+                right = left + (width * box['Width'])
+                bottom = top + (height * box['Height'])
+                draw.rectangle([left, top, right, bottom], fill="black")
+                
+            # Save the redacted image to a bytes buffer
+            output_buffer = io.BytesIO()
+            img_format = image.format if image.format else "JPEG"
+            image.save(output_buffer, format=img_format)
+            output_buffer.seek(0)
+            
+            headers = {
+                "X-Faces-Redacted": str(len(faces)),
+                "X-Plates-Redacted": str(len(plates)),
+                "Access-Control-Expose-Headers": "X-Faces-Redacted, X-Plates-Redacted"
+            }
+            
+            print(f"[Amazon Rekognition] Successfully redacted {len(faces)} faces and {len(plates)} text regions.")
+            return StreamingResponse(output_buffer, media_type=media.content_type, headers=headers)
+            
+        except Exception as img_e:
+            print(f"Pillow Image Error: {img_e}")
+            # If it's a video or unrecognized format, skip redaction
+            return StreamingResponse(io.BytesIO(image_bytes), media_type=media.content_type, headers={
+                "X-Faces-Redacted": "0", "X-Plates-Redacted": "0"
+            })
+            
+    except Exception as e:
+        print(f"Rekognition Error: {e}")
+        return StreamingResponse(io.BytesIO(image_bytes), media_type=media.content_type, headers={
+            "X-Faces-Redacted": "0", "X-Plates-Redacted": "0"
+        })
 
 class DraftRequest(BaseModel):
     damageType: str | None = None

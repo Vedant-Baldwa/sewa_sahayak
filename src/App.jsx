@@ -11,8 +11,8 @@ import { getDeviceLocation, mapJurisdiction, watchDeviceLocation, getCityName } 
 import DraftReview from './components/DraftReview';
 import AgenticSubmission from './components/AgenticSubmission';
 import Auth from './components/Auth';
+import { uploadEvidenceToS3, saveReportToDynamoDB, sendPushNotification } from './services/tracking';
 import MyReports from './components/MyReports';
-import { saveReportToDynamoDB, uploadEvidenceToS3, sendPushNotification } from './services/tracking';
 import { Shield, MapPin, FileText, UserCircle } from 'lucide-react';
 
 function App() {
@@ -90,10 +90,31 @@ function App() {
       if (unsynced.length > 0) {
         console.log(`Found ${unsynced.length} offline captures to sync`);
         for (const item of unsynced) {
-          // TODO: Replace with real API call to S3/backend when implemented
-          await new Promise(resolve => setTimeout(resolve, 800)); // mock network delay
-          await markMediaAsSynced(item.id);
-          console.log(`Synced capture ${item.id}`);
+          try {
+            // Generate a dummy ticketId for offline synced draft
+            const offlineTicketId = `BMC-OFFLINE-${Math.floor(Math.random() * 10000)}`;
+
+            // Only sync if there is a blob
+            if (item.blob) {
+              await uploadEvidenceToS3(item.blob, offlineTicketId);
+
+              // If the item has drafting data stored as metadata, use it, otherwise create a base
+              const draftData = {
+                jurisdiction: item.jurisdiction || 'Unknown',
+                damageType: 'Offline Submission',
+                severity: 'Unknown'
+              };
+              await saveReportToDynamoDB(offlineTicketId, draftData, item.id);
+
+              await markMediaAsSynced(item.id);
+              console.log(`Successfully synced offline capture ${item.id} with ticket ${offlineTicketId}`);
+            } else {
+              await markMediaAsSynced(item.id);
+            }
+          } catch (syncErr) {
+            console.error(`Failed to sync capture ${item.id}`, syncErr);
+            // Leave as unsynced for next time
+          }
         }
         // Update local UI state
         setCaptures(prev => prev.map(c => ({ ...c, synced: true })));

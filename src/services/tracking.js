@@ -16,7 +16,8 @@ export const saveReportToDynamoDB = async (ticketId, draft, captureId) => {
             status: 'SUBMITTED',
             captureId
         };
-        const res = await fetch("http://localhost:8000/api/reports/save", {
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+        const res = await fetch(`${BACKEND_URL}/api/reports/save`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
@@ -30,6 +31,7 @@ export const saveReportToDynamoDB = async (ticketId, draft, captureId) => {
         }
     } catch (error) {
         console.error("Failed to save report to backend", error);
+        alert(`DynamoDB Save Error: ${error.message}`);
     }
 };
 
@@ -40,7 +42,8 @@ export const uploadEvidenceToS3 = async (blob, ticketId) => {
         formData.append("evidence", blob, "evidence.jpg");
         formData.append("ticketId", ticketId);
 
-        const res = await fetch("http://localhost:8000/api/evidence/upload", {
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+        const res = await fetch(`${BACKEND_URL}/api/evidence/upload`, {
             method: "POST",
             body: formData
         });
@@ -52,6 +55,7 @@ export const uploadEvidenceToS3 = async (blob, ticketId) => {
         return data.s3_uri;
     } catch (error) {
         console.error("Failed to upload evidence to backend S3", error);
+        alert(`S3 Upload Error: ${error.message}`);
         return `s3://mock-fallback/${ticketId}/evidence.blob`;
     }
 };
