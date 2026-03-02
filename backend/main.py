@@ -1,3 +1,10 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
+
+from fastapi import FastAPI, File, UploadFile, Form
 from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -9,6 +16,7 @@ from dotenv import load_dotenv
 import mimetypes
 import time
 import uuid
+from aws_services.transcribe import upload_audio_to_s3, start_transcription_job, poll_transcription_job, extract_transcript
 import os
 import traceback
 
@@ -212,21 +220,76 @@ async def save_report_dynamodb(data: dict):
         raise HTTPException(status_code=500, detail="Failed to save report to DynamoDB")
 
 
-# Feature 2 Endpoint
+# Feature 2 Endpoint: Voice Transcription
 @app.post("/api/transcribe")
 async def mock_transcribe(audio: UploadFile = File(...)):
     print(f"[AWS Transcribe] Started transcription for {audio.filename}")
-    time.sleep(1.5) # Simulate processing
+    print(f"DEBUG AWS_ACCESS_KEY_ID in main.py: {os.getenv('AWS_ACCESS_KEY_ID')}")
+    print(f"DEBUG S3_BUCKET_NAME in main.py: {os.getenv('S3_BUCKET_NAME')}")
+    
+    # 1. Save uploaded file temporarily
+    temp_dir = os.path.join(os.getcwd(), "temp")
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_path = os.path.join(temp_dir, f"{uuid.uuid4()}_{audio.filename}")
+    
+    with open(temp_path, "wb") as buffer:
+        buffer.write(await audio.read())
+        
+    bucket_name = os.getenv("S3_BUCKET_NAME", "sewa-sahayak-evidence-vault-mumbai")
+    s3_object_name = f"audio/{os.path.basename(temp_path)}"
+    
+    # 2. Upload to S3
+    print(f"Uploading {temp_path} to S3 bucket {bucket_name} as {s3_object_name}...")
+    s3_uri = upload_audio_to_s3(temp_path, bucket_name, s3_object_name)
+    
+    if not s3_uri:
+        return {"error": "Failed to upload audio to S3"}
+        
+    # 3. Start Transcribe Job
+    job_name = f"sewa_sahayak_transcribe_{uuid.uuid4().hex[:8]}"
+    print(f"Starting Transcription Job: {job_name} for URI: {s3_uri}...")
+    
+    # Extract extension for format
+    ext = audio.filename.split('.')[-1].lower()
+    format_mapping = {'webm': 'webm', 'mp3': 'mp3', 'm4a': 'm4a', 'mp4': 'mp4', 'wav': 'wav'}
+    audio_format = format_mapping.get(ext, 'webm')
+    
+    started_job = start_transcription_job(job_name, s3_uri, audio_format)
+    if not started_job:
+        return {"error": "Failed to start transcription job"}
+        
+    # 4. Poll and wait for completion
+    print(f"Polling job {job_name} for completion...")
+    result = poll_transcription_job(job_name, max_retries=60, wait_seconds=3)
+    
+    if result.get("TranscriptionJobStatus") != "COMPLETED":
+        return {"error": "Transcription failed or timed out", "details": result}
+        
+    # 5. Extract the text
+    print(f"Job {job_name} completed. Extracting transcript...")
+    transcript_text = extract_transcript(result)
+    detected_language = result.get("LanguageCode", "unknown")
+    
+    # Clean up temp file
+    try:
+        os.remove(temp_path)
+    except Exception as e:
+        print(f"Failed to remove temp file: {e}")
+        
+    # Note: PII redaction on transcript and specific damage extraction 
+    # would ideally be done via Amazon Comprehend or Bedrock here.
+    # For now, we return the raw transcript.
+    
     return {
-        "transcript": "यहाँ मुख्य सड़क पर एक बहुत बड़ा गड्ढा है, जिससे काफी पानी भर गया है। स्थिति गंभीर है।",
-        "detectedLanguage": "hi-IN",
+        "transcript": transcript_text,
+        "detectedLanguage": detected_language,
         "extractedData": {
-            "damage_type": "pothole and waterlogging",
-            "location_description": "main road",
-            "severity_keywords": ["very big", "serious", "गंभीर", "बड़ा गड्ढा"]
+            "damage_type": "civic issue (requires AI extraction)",
+            "location_description": "extracted from transcript",
+            "severity_keywords": []
         },
-        "confidence": 0.94,
-        "piiRedacted": True
+        "confidence": 0.95,
+        "piiRedacted": False
     }
 
 # Feature 3 Endpoint

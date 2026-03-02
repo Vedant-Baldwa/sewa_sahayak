@@ -26,6 +26,9 @@ dist-ssr
 # Python Backend
 backend/venv/
 backend/__pycache__/
+backend/.env
+backend/test_audio.mp3
+backend/temp/
 
 # Environment variables (secrets) — never commit these!
 .env
