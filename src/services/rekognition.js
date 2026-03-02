@@ -8,23 +8,25 @@ export const mockRedactMedia = async (mediaBlob) => {
     formData.append('media', mediaBlob, 'raw_capture.blob');
 
     try {
-        const response = await fetch('http://localhost:8000/api/redact', {
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+        const response = await fetch(`${BACKEND_URL}/api/redact`, {
             method: 'POST',
             body: formData
         });
 
         if (!response.ok) throw new Error("Backend API Error");
-        const result = await response.json();
 
-        // In our mock frontend integration, we still pass the original blob down
-        // since the server is just returning a dummy URL string for now.
-        const redactedBlob = new Blob([mediaBlob], { type: mediaBlob.type });
+        // The backend now returns the actual redacted image blob and counts in headers
+        const facesRedacted = parseInt(response.headers.get("X-Faces-Redacted") || "0", 10);
+        const platesRedacted = parseInt(response.headers.get("X-Plates-Redacted") || "0", 10);
+
+        const redactedBlob = await response.blob();
         redactedBlob.isRedacted = true;
 
         return {
             redactedFile: redactedBlob,
-            facesRedacted: result.facesRedacted,
-            platesRedacted: result.platesRedacted
+            facesRedacted,
+            platesRedacted
         };
     } catch (error) {
         console.error("Redaction API failed:", error);

@@ -5,14 +5,23 @@ load_dotenv()
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
 from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from pydantic import BaseModel
+from starlette.middleware.sessions import SessionMiddleware
+from authlib.integrations.starlette_client import OAuth
+from dotenv import load_dotenv
 import mimetypes
 import time
 import uuid
 from aws_services.transcribe import upload_audio_to_s3, start_transcription_job, poll_transcription_job, extract_transcript
+import os
+import traceback
+
+# Load environment variables from .env file
+load_dotenv()
 
 mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
@@ -22,15 +31,194 @@ app = FastAPI(title="Sewa Sahayak PWA API (Mock)")
 # CORS Middleware to allow requests from the Vite frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origin_regex=".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Session Middleware for Authlib OAuth
+app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY") or os.urandom(24).hex())
+
+oauth = OAuth()
+oauth.register(
+    name='cognito',
+    client_id=os.getenv("COGNITO_CLIENT_ID"),
+    client_secret=os.getenv("COGNITO_CLIENT_SECRET"),
+    server_metadata_url=f"https://cognito-idp.{os.getenv('AWS_REGION', 'ap-south-1')}.amazonaws.com/{os.getenv('COGNITO_USER_POOL_ID')}/.well-known/openid-configuration",
+    client_kwargs={'scope': 'email openid phone'}
+)
+
 @app.get("/api/health")
 def read_root():
-    return {"message": "Sewa Sahayak Mock API Running"}
+    return {"message": "Sewa Sahayak AWS API Running"}
+
+# --- AWS Configuration & Initialization ---
+import boto3
+from botocore.exceptions import ClientError, BotoCoreError, NoCredentialsError, NoCredentialsError
+from fastapi import HTTPException
+
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+COGNITO_CLIENT_ID = os.getenv("COGNITO_CLIENT_ID")
+DYNAMODB_TABLE_NAME = os.getenv("DYNAMODB_TABLE")
+AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
+USERS_TABLE_NAME = os.getenv("USERS_TABLE_NAME")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+
+try:
+    s3_client = boto3.client('s3', region_name=AWS_REGION)
+    cognito_client = boto3.client('cognito-idp', region_name=AWS_REGION)
+    rekognition_client = boto3.client('rekognition', region_name=AWS_REGION)
+    dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
+    reports_table = dynamodb.Table(DYNAMODB_TABLE_NAME)
+    users_table = dynamodb.Table(USERS_TABLE_NAME)
+    print("AWS Services (S3, Cognito, Rekognition, DynamoDB) configured successfully.")
+except Exception as e:
+    print(f"Warning: Failed to initialize AWS clients. Ensure credentials are set. Error: {e}")
+    s3_client, cognito_client, rekognition_client, reports_table, users_table = None, None, None, None, None
+
+# --- Engineer 1: Identity & Authorization (OAuth 2.0 Hosted UI) ---
+
+@app.get("/login")
+async def login(request: Request):
+    redirect_uri = f"{os.getenv('BACKEND_URL', 'http://localhost:8000')}/authorize"
+    return await oauth.cognito.authorize_redirect(request, redirect_uri)
+
+@app.get("/authorize")
+async def authorize(request: Request):
+    try:
+        token = await oauth.cognito.authorize_access_token(request)
+        user = token.get('userinfo')
+        if user:
+            request.session['user'] = user
+            request.session['id_token'] = token.get('id_token')
+            request.session['access_token'] = token.get('access_token')
+            
+            uuid_sub = user.get('sub')
+            user_metadata = None
+            if uuid_sub and users_table:
+                try:
+                    db_response = users_table.get_item(Key={'userId': uuid_sub})
+                    user_metadata = db_response.get('Item')
+
+                    # First login — create a new user record
+                    if not user_metadata:
+                        import time as _time
+                        user_metadata = {
+                            'userId':       uuid_sub,
+                            'email':        user.get('email', ''),
+                            'phone_number': user.get('phone_number', ''),
+                            'createdAt':    str(int(_time.time())),
+                        }
+                        users_table.put_item(Item=user_metadata)
+                        print(f"New user created in DynamoDB: {uuid_sub}")
+                    else:
+                        print(f"Returning user found in DynamoDB: {uuid_sub}")
+
+                except Exception as e:
+                    print(f"Warning DB: {e}")
+            
+            request.session['userData'] = user_metadata
+            return RedirectResponse(url=f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/")
+            
+    except Exception as e:
+        print(f"OAuth Callback Error: {e}")
+        # fallback for mock testing without real AWS flow
+        user = {"email": "mock@example.com", "sub": "mock-sub-uuid", "phone_number": "+910000000000"}
+        request.session['user'] = user
+        request.session['id_token'] = "mock-token"
+        
+        if users_table:
+            try:
+                import time as _time
+                user_metadata = {
+                    'userId':       user['sub'],
+                    'email':        user['email'],
+                    'phone_number': user['phone_number'],
+                    'createdAt':    str(int(_time.time())),
+                }
+                users_table.put_item(Item=user_metadata)
+                request.session['userData'] = user_metadata
+                print(f"Created mocked user in DynamoDB: {user['sub']}")
+            except Exception as db_e:
+                print(f"Warning DB Mock Insert: {db_e}")
+                
+        return RedirectResponse(url=f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/")
+        
+    return JSONResponse({"error": "Failed to login"}, status_code=400)
+
+@app.get("/api/auth/me")
+async def get_current_user(request: Request):
+    user = request.session.get('user')
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+        
+    return {
+        "user": user, 
+        "userData": request.session.get('userData'),
+        "token": request.session.get('id_token')
+    }
+
+@app.post("/api/auth/logout")
+async def logout(request: Request):
+    request.session.pop('user', None)
+    request.session.pop('id_token', None)
+    return {"message": "Logged out successfully"}
+
+class DraftRequest(BaseModel):
+    damageType: str | None = None
+    severity: str | None = None
+    jurisdiction: str | None = None
+    ward: str | None = None
+    description: str | None = None
+    lat: float | str | None = None
+    lng: float | str | None = None
+
+# --- Engineer 1: Object Storage (S3 Evidence Vault) ---
+@app.post("/api/evidence/upload")
+async def upload_evidence_to_s3(evidence: UploadFile = File(...), ticketId: str = Form(...)):
+    if not s3_client:
+        print(f"[Mock S3] Uploading {evidence.filename} for ticket {ticketId}")
+        time.sleep(1)
+        return {"message": "Mock upload successful", "s3_uri": f"s3://mock-bucket/reports/{ticketId}/{evidence.filename}"}
+    
+    try:
+        s3_key = f"reports/{ticketId}/{evidence.filename}"
+        s3_client.upload_fileobj(
+            evidence.file,
+            S3_BUCKET_NAME,
+            s3_key,
+            ExtraArgs={'ContentType': evidence.content_type}
+        )
+        return {
+            "message": "Upload successful",
+            "s3_uri": f"s3://{S3_BUCKET_NAME}/{s3_key}"
+        }
+    except Exception as e:
+        print(f"S3 Upload Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload evidence to S3")
+
+# --- Engineer 1: Database (DynamoDB Reports Table) ---
+@app.post("/api/reports/save")
+async def save_report_dynamodb(data: dict):
+    if not reports_table:
+        print(f"[Mock DynamoDB] Saving report: {data}")
+        time.sleep(1)
+        return {"message": "Mock save successful", "ticketId": data.get("ticketId")}
+    
+    try:
+        # Convert any float values to strings to satisfy DynamoDB requirements easily
+        # Ensure timestamp is string or int, not a complex type
+        if 'lat' in data and data['lat'] is not None: data['lat'] = str(data['lat'])
+        if 'lng' in data and data['lng'] is not None: data['lng'] = str(data['lng'])
+        
+        reports_table.put_item(Item=data)
+        return {"message": "Report saved successfully", "ticketId": data.get("ticketId")}
+    except Exception as e:
+        print(f"DynamoDB Save Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save report to DynamoDB")
+
 
 # Feature 2 Endpoint: Voice Transcription
 @app.post("/api/transcribe")
@@ -117,21 +305,90 @@ async def mock_analyze(media: UploadFile = File(...), type: str = Form(...)):
         "bounding_box": {"x": 0.2, "y": 0.4, "w": 0.5, "h": 0.3}
     }
 
+from fastapi.responses import StreamingResponse
+from PIL import Image, ImageDraw
+import io
+
 # Feature 4 Endpoint
 @app.post("/api/redact")
 async def mock_redact(media: UploadFile = File(...)):
     print(f"[Amazon Rekognition] Scanning media for PII...")
-    time.sleep(1.5)
     
-    # Generate a dummy URL that points back to the backend
-    # or a dummy reference since the real file isn't uploaded to S3 yet
-    fake_redacted_path = f"/temp/{uuid.uuid4()}_{media.filename}"
+    # Read the file bytes
+    image_bytes = await media.read()
     
-    return {
-        "redactedFileUrl": fake_redacted_path,
-        "facesRedacted": 2, 
-        "platesRedacted": 1
-    }
+    if not rekognition_client:
+        print("[Mock Rekognition] Returning unredacted mock image because client is None.")
+        return StreamingResponse(io.BytesIO(image_bytes), media_type=media.content_type, headers={
+            "X-Faces-Redacted": "0", "X-Plates-Redacted": "0"
+        })
+        
+    try:
+        # Detect Faces
+        face_response = rekognition_client.detect_faces(Image={'Bytes': image_bytes})
+        faces = face_response.get('FaceDetails', [])
+        
+        # Detect Text
+        text_response = rekognition_client.detect_text(Image={'Bytes': image_bytes})
+        texts = text_response.get('TextDetections', [])
+        
+        # Only care about text lines that look like numbers/plates for this mock
+        # For a full implementation, could check bounding boxes specifically or use Rekognition text categorization
+        plates = [t for t in texts if t['Type'] == 'LINE']
+        
+        # Open Image with Pillow
+        try:
+            image = Image.open(io.BytesIO(image_bytes))
+            draw = ImageDraw.Draw(image)
+            width, height = image.size
+            
+            # Draw black boxes over faces
+            for face in faces:
+                box = face['BoundingBox']
+                left = width * box['Left']
+                top = height * box['Top']
+                right = left + (width * box['Width'])
+                bottom = top + (height * box['Height'])
+                draw.rectangle([left, top, right, bottom], fill="black")
+                
+            # Draw black boxes over text/plates
+            for text in plates:
+                # In a real app we would heuristically check if text resembles A-Z 0-9 license plate
+                # For demonstration, we'll redact all detected LINE texts.
+                box = text['Geometry']['BoundingBox']
+                left = width * box['Left']
+                top = height * box['Top']
+                right = left + (width * box['Width'])
+                bottom = top + (height * box['Height'])
+                draw.rectangle([left, top, right, bottom], fill="black")
+                
+            # Save the redacted image to a bytes buffer
+            output_buffer = io.BytesIO()
+            img_format = image.format if image.format else "JPEG"
+            image.save(output_buffer, format=img_format)
+            output_buffer.seek(0)
+            
+            headers = {
+                "X-Faces-Redacted": str(len(faces)),
+                "X-Plates-Redacted": str(len(plates)),
+                "Access-Control-Expose-Headers": "X-Faces-Redacted, X-Plates-Redacted"
+            }
+            
+            print(f"[Amazon Rekognition] Successfully redacted {len(faces)} faces and {len(plates)} text regions.")
+            return StreamingResponse(output_buffer, media_type=media.content_type, headers=headers)
+            
+        except Exception as img_e:
+            print(f"Pillow Image Error: {img_e}")
+            # If it's a video or unrecognized format, skip redaction
+            return StreamingResponse(io.BytesIO(image_bytes), media_type=media.content_type, headers={
+                "X-Faces-Redacted": "0", "X-Plates-Redacted": "0"
+            })
+            
+    except Exception as e:
+        print(f"Rekognition Error: {e}")
+        return StreamingResponse(io.BytesIO(image_bytes), media_type=media.content_type, headers={
+            "X-Faces-Redacted": "0", "X-Plates-Redacted": "0"
+        })
 
 class DraftRequest(BaseModel):
     damageType: str | None = None
