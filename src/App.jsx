@@ -7,7 +7,7 @@ import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { mockTranscribeAudio } from './services/transcribe';
 import { mockAnalyzeMedia } from './services/bedrock';
 import { mockRedactMedia } from './services/rekognition';
-import { getDeviceLocation, mapJurisdiction } from './services/gps';
+import { getDeviceLocation, mapJurisdiction, watchDeviceLocation, getCityName } from './services/gps';
 import DraftReview from './components/DraftReview';
 import AgenticSubmission from './components/AgenticSubmission';
 import Auth from './components/Auth';
@@ -27,6 +27,8 @@ function App() {
   const [activeSubmissionDraft, setActiveSubmissionDraft] = useState(null);
   const [user, setUser] = useState(null);
   const [showReports, setShowReports] = useState(false);
+  const [liveLocation, setLiveLocation] = useState(null);
+  const [cityName, setCityName] = useState("");
   const photoInputRef = useRef(null);
   const videoInputRef = useRef(null);
 
@@ -53,7 +55,33 @@ function App() {
       }
     };
     checkSession();
+
+    // Start Live GPS Tracking
+    const watchId = watchDeviceLocation(
+      (location) => {
+        setLiveLocation(location);
+      },
+      (err) => console.warn("Live Location Error:", err)
+    );
+
+    return () => {
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    };
   }, [isOnline]);
+
+  // City Name Fetcher
+  useEffect(() => {
+    let active = true;
+    async function fetchCity() {
+      if (liveLocation && active) {
+        console.log("Fetching City Name for:", liveLocation.lat, liveLocation.lng);
+        const name = await getCityName(liveLocation.lat, liveLocation.lng);
+        if (active) setCityName(name);
+      }
+    }
+    fetchCity();
+    return () => { active = false; };
+  }, [liveLocation?.lat, liveLocation?.lng]); // only re-fetch on coordinate change
 
   const syncOfflineData = async () => {
     setIsSyncing(true);
@@ -108,7 +136,14 @@ function App() {
     let locationData = null;
     let jurisdiction = null;
     try {
-      locationData = await getDeviceLocation();
+      // Use liveLocation if available (even if slightly old) to keep UI fast
+      if (liveLocation) {
+        console.log("Using liveLocation for capture:", liveLocation);
+        locationData = liveLocation;
+      } else {
+        console.log("No liveLocation, fetching fresh GPS...");
+        locationData = await getDeviceLocation();
+      }
       jurisdiction = mapJurisdiction(locationData.lat, locationData.lng);
     } catch (err) {
       console.warn("Location capture failed", err);
@@ -155,10 +190,13 @@ function App() {
 
     setIsAnalyzing(true);
     try {
+      console.log("Starting Bedrock Analysis for:", type);
       const analysis = await mockAnalyzeMedia(finalFile, type);
+      console.log("Bedrock Analysis Complete:", analysis);
       await handleMediaCapture(finalFile, type, { analysis, redaction: redactionInfo });
     } catch (err) {
       console.error("Analysis failed", err);
+      // Still allow submission even if analysis fails
       await handleMediaCapture(finalFile, type, { redaction: redactionInfo });
     } finally {
       setIsAnalyzing(false);
@@ -334,6 +372,14 @@ function App() {
               <div style={{ background: 'var(--color-bg)', padding: '1rem', borderRadius: '12px', textAlign: 'center', color: 'var(--color-text-main)' }}>
                 <MapPin size={24} className="animate-pulse" style={{ margin: '0 auto 0.5rem' }} />
                 <p style={{ fontSize: '0.9rem', fontWeight: '500' }}>Extracting GPS & Mapping Jurisdiction...</p>
+              </div>
+            )}
+            {cityName && (
+              <div style={{ background: 'var(--color-bg)', padding: '0.75rem', borderRadius: '12px', border: '1px solid var(--color-success)', marginTop: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', animation: 'fadeIn 0.5s' }}>
+                <MapPin size={20} color="var(--color-success)" />
+                <span style={{ fontSize: '1rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>
+                  Active in: <span style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>{cityName}</span>
+                </span>
               </div>
             )}
           </div>

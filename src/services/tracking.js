@@ -47,7 +47,10 @@ export const uploadEvidenceToS3 = async (blob, ticketId) => {
             method: "POST",
             body: formData
         });
-        if (!res.ok) throw new Error("S3 Upload Failed");
+        if (!res.ok) {
+            const errDetail = await res.text();
+            throw new Error(`S3 Upload Failed: ${res.status} - ${errDetail}`);
+        }
         const data = await res.json();
         return data.s3_uri;
     } catch (error) {

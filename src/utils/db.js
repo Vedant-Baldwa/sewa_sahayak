@@ -1,17 +1,26 @@
 import { openDB } from 'idb';
 
 const DB_NAME = 'SewaSahayakDB';
-const DB_VERSION = 1;
+const DB_VERSION = 3; // Bumped to fix VersionError (browser had stale v2)
 const STORE_NAME = 'media_captures';
 
 export const initDB = async () => {
     return openDB(DB_NAME, DB_VERSION, {
-        upgrade(db) {
+        upgrade(db, oldVersion) {
+            // Safe migration: create the store if it doesn't exist at any version
             if (!db.objectStoreNames.contains(STORE_NAME)) {
                 const store = db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
                 store.createIndex('timestamp', 'timestamp');
                 store.createIndex('synced', 'synced');
             }
+        },
+        blocked() {
+            // Another tab is open on an old version — tell user to refresh
+            console.warn('DB upgrade blocked. Please close other tabs of this app and refresh.');
+        },
+        blocking() {
+            // This tab is blocking a newer version — close and let the new one win
+            console.warn('DB is blocking a newer version. Closing connection.');
         },
     });
 };
