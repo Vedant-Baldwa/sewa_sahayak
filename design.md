@@ -395,7 +395,7 @@ Now I need to use the prework tool to analyze the acceptance criteria before wri
 
 ## Correctness Properties
 
-*A property is a characteristic or behavior that should hold true across all valid executions of a system—essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
+*A property is a characteristic or behavior that should hold true across all valid executions of a systemâ€”essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
 
 Based on the prework analysis of acceptance criteria, the following properties ensure the correctness of Seva Sahayak across all valid inputs and scenarios:
 
@@ -540,7 +540,7 @@ The testing strategy employs both unit testing and property-based testing to ens
 
 **Property Tests**: Verify universal properties across all inputs using randomized test data. These tests ensure the system behaves correctly across the full input space and catch edge cases that might be missed by example-based tests.
 
-Together, unit tests and property tests provide complementary coverage—unit tests catch concrete implementation bugs while property tests verify general correctness guarantees.
+Together, unit tests and property tests provide complementary coverageâ€”unit tests catch concrete implementation bugs while property tests verify general correctness guarantees.
 
 ### Property-Based Testing Configuration
 
