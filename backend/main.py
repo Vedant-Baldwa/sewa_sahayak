@@ -17,6 +17,9 @@ import mimetypes
 import time
 import uuid
 from aws_services.transcribe import upload_audio_to_s3, start_transcription_job, poll_transcription_job, extract_transcript
+from aws_services.location import reverse_geocode, verify_address
+from aws_services.bedrock import get_portal_routing
+import json
 import os
 import traceback
 
@@ -390,14 +393,66 @@ async def mock_redact(media: UploadFile = File(...)):
             "X-Faces-Redacted": "0", "X-Plates-Redacted": "0"
         })
 
-class DraftRequest(BaseModel):
-    damageType: str | None = None
-    severity: str | None = None
-    jurisdiction: str | None = None
-    ward: str | None = None
-    description: str | None = None
-    lat: float | str | None = None
-    lng: float | str | None = None
+class RouteRequest(BaseModel):
+    lat: float | None = None
+    lng: float | None = None
+    state: str | None = None
+    city: str | None = None
+    address: str | None = None
+
+# Load PORTAL_DB
+try:
+    with open(os.path.join(os.path.dirname(__file__), "portals.json"), "r") as f:
+        PORTALS_DB = json.load(f)
+except Exception:
+    PORTALS_DB = {}
+
+# Feature 5 Endpoint: Cognitive Dispatcher
+@app.post("/api/route")
+async def route_complaint(route_req: RouteRequest):
+    print(f"[Cognitive Dispatcher] Processing routing request: {route_req}")
+    structured_address = None
+    
+    # Scenario A: High-Trust Reporting (GPS Enabled)
+    if route_req.lat is not None and route_req.lng is not None:
+        print("[Location Service] Using Reverse Geocoding...")
+        structured_address = reverse_geocode(route_req.lat, route_req.lng)
+        
+    # Scenario B: Manual Reporting (No GPS / Gallery Uploads)
+    elif route_req.state and route_req.city and route_req.address:
+        print("[Location Service] Using Geocoding Verification...")
+        structured_address = verify_address(route_req.state, route_req.city, route_req.address)
+        
+    if not structured_address:
+        if route_req.address or route_req.city or route_req.state:
+            location_string = f"{route_req.address or ''}, {route_req.city or ''}, {route_req.state or ''}".strip(", ")
+        else:
+            return {
+                "structured_address": None,
+                "routing": {
+                    "portal_name": "CPGRAMS",
+                    "portal_url": PORTALS_DB.get("CENTRAL", {}).get("CPGRAMS", "https://pgportal.gov.in/Registration"),
+                    "reasoning": "Insufficient location data provided. Routing to the central CPGRAMS portal as a default fallback."
+                }
+            }
+    else:
+        location_string = (
+            structured_address.get("Address")
+            if structured_address
+            else f"{route_req.address or ''}, {route_req.city or ''}, {route_req.state or ''}"
+        )
+        
+    print(f"[Bedrock Nova Pro] Determining portal for: {location_string}")
+    # 2 & 3: The Routing Knowledge Base & The LLM System Prompt
+    routing_result = get_portal_routing(location_string, PORTALS_DB)
+    
+    if not routing_result:
+        raise HTTPException(status_code=500, detail="Failed to route complaint")
+        
+    return {
+        "structured_address": structured_address,
+        "routing": routing_result
+    }
 
 # Feature 6 Endpoint
 @app.post("/api/draft")
