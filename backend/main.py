@@ -407,9 +407,13 @@ async def mock_generate_draft(data: dict):
     
     analysis_desc = data.get("analysis", {}).get("suggested_description", "")
     transcript_desc = data.get("transcription", {}).get("transcript", "")
+    location_address = data.get("locationData", {}).get("address", "")
     
     description = analysis_desc or ("Voice Report: " + transcript_desc) or "Observed civic issue."
     
+    if location_address:
+        description += f"\n\nReported Location: {location_address}"
+        
     return {
         "applicantName": "A Citizen",
         "phoneNumber": "+91-9876543210",

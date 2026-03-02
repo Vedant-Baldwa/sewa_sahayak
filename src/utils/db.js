@@ -1,7 +1,7 @@
 import { openDB } from 'idb';
 
 const DB_NAME = 'SewaSahayakDB';
-const DB_VERSION = 1;
+const DB_VERSION = 3;
 const STORE_NAME = 'media_captures';
 
 export const initDB = async () => {

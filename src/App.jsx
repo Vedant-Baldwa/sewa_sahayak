@@ -23,6 +23,9 @@ function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isRedacting, setIsRedacting] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState(null);
+  const [pendingCapture, setPendingCapture] = useState(null);
+  const [manualLocationInput, setManualLocationInput] = useState('');
   const [selectedCaptureForDraft, setSelectedCaptureForDraft] = useState(null);
   const [activeSubmissionDraft, setActiveSubmissionDraft] = useState(null);
   const [user, setUser] = useState(null);
@@ -107,35 +110,86 @@ function App() {
     setIsLocating(true);
     let locationData = null;
     let jurisdiction = null;
+
     try {
       locationData = await getDeviceLocation();
       jurisdiction = mapJurisdiction(locationData.lat, locationData.lng);
+
+      // If success, proceed to save directly
+      await finalizeCapture({
+        blob, type, previewUrl, timestamp, jurisdiction, locationData, additionalMetaData
+      });
+
     } catch (err) {
-      console.warn("Location capture failed", err);
+      console.warn("Location capture failed, requesting manual entry", err);
+      // Wait for user to manually enter location
+      setPendingCapture({ blob, type, previewUrl, timestamp, additionalMetaData });
+      setLocationError("We couldn't reach your device GPS. This is required for official reports.");
     } finally {
       setIsLocating(false);
     }
+  };
 
-    const metadata = { previewUrl, jurisdiction, ...additionalMetaData };
-    // Save locally via IndexedDB
-    const id = await saveMediaLocally(blob, type, metadata);
+  const submitManualLocation = async () => {
+    try {
+      if (!manualLocationInput.trim()) return;
 
-    const newCapture = {
-      id,
-      blob,
-      type,
-      timestamp,
-      synced: isOnline,
-      ...metadata
-    };
+      // Use a basic mock mapping for the manual string for demo purposes
+      // Real implementation would use Google Maps Geocoding API to get Lat/Lng
+      const manualJurisdiction = {
+        jurisdiction_level: "Municipal",
+        portal_name: "Manual Entry Jurisdiction",
+        portal_url: "https://mock.gov.in/report",
+        ward_district: manualLocationInput,
+        mapped_coordinates: { lat: 0, lng: 0 } // Default proxy
+      };
 
-    setCaptures(prev => [newCapture, ...prev]);
+      await finalizeCapture({
+        ...pendingCapture,
+        jurisdiction: manualJurisdiction,
+        locationData: { address: manualLocationInput }
+      });
 
-    // If online, mock immediate sync
-    if (isOnline) {
-      setTimeout(async () => {
-        await markMediaAsSynced(id);
-      }, 500);
+      // Cleanup states
+      setLocationError(null);
+      setPendingCapture(null);
+      setManualLocationInput('');
+    } catch (err) {
+      console.error("Manual Entry Error:", err);
+      alert("Error saving manual location: " + err.message);
+    }
+  };
+
+  const finalizeCapture = async ({ blob, type, previewUrl, timestamp, jurisdiction, locationData, additionalMetaData }) => {
+    try {
+      const metadata = { previewUrl, jurisdiction, locationData, ...additionalMetaData };
+
+      // Save locally via IndexedDB
+      const id = await saveMediaLocally(blob, type, metadata);
+
+      const newCapture = {
+        id,
+        blob,
+        type,
+        timestamp,
+        synced: isOnline,
+        ...metadata
+      };
+
+      setCaptures(prev => [newCapture, ...prev]);
+
+      // If online, mock immediate sync
+      if (isOnline) {
+        setTimeout(async () => {
+          try {
+            await markMediaAsSynced(id);
+          } catch (syncErr) { }
+        }, 500);
+      }
+    } catch (err) {
+      console.error("Finalize Capture Error:", err);
+      alert("Failed to finalize capture: " + err.message);
+      throw err;
     }
   };
 
@@ -256,6 +310,55 @@ function App() {
             onClose={() => setSelectedCaptureForDraft(null)}
             onSubmit={handleDraftSubmit}
           />
+        </main>
+      </>
+    );
+  }
+
+  if (locationError && pendingCapture) {
+    return (
+      <>
+        <header className="app-header">
+          <h1 className="heading-2 text-gradient">Sewa Sahayak</h1>
+        </header>
+        <main className="app-main" style={{ justifyContent: 'center' }}>
+          <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center' }}>
+            <MapPin size={48} color="var(--color-danger)" style={{ margin: '0 auto 1rem' }} />
+            <h2 className="heading-2" style={{ marginBottom: '1rem' }}>Location Required</h2>
+            <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
+              {locationError}
+            </p>
+            <div className="input-group" style={{ textAlign: 'left' }}>
+              <label className="input-label">Enter exact location manually (Landmark, Street, City)</label>
+              <input
+                type="text"
+                className="input-field"
+                placeholder="e.g. Opposite Metro Pillar 42, Andheri East"
+                value={manualLocationInput}
+                onChange={(e) => setManualLocationInput(e.target.value)}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+              <button
+                className="btn btn-secondary"
+                style={{ flex: 1 }}
+                onClick={() => {
+                  setLocationError(null);
+                  setPendingCapture(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1 }}
+                disabled={!manualLocationInput.trim()}
+                onClick={submitManualLocation}
+              >
+                Save Location
+              </button>
+            </div>
+          </div>
         </main>
       </>
     );
