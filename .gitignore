@@ -29,3 +29,12 @@ backend/__pycache__/
 backend/.env
 backend/test_audio.mp3
 backend/temp/
+
+# Environment variables (secrets) — never commit these!
+.env
+backend/.env
+
+# Logs and temp data files
+push.log
+out.log
+events.json

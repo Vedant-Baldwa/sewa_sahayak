@@ -4,27 +4,57 @@ import { openDB } from 'idb';
  * Mock AWS Services for Post-Submission Tracking
  */
 
-// Save final report to mock DynamoDB (using IndexedDB for persistence in this PWA mockup)
 export const saveReportToDynamoDB = async (ticketId, draft, captureId) => {
     console.log(`[Amazon DynamoDB] Saving report metadata for ticket: ${ticketId}`);
-    const db = await openDB('SewaSahayakDB', 1);
-    if (!db.objectStoreNames.contains('reports')) return; // handled in updated initDB
+    try {
+        const payload = {
+            ticketId,
+            timestamp: Date.now(),
+            jurisdiction: draft.jurisdiction,
+            damageType: draft.damageType,
+            severity: draft.severity,
+            status: 'SUBMITTED',
+            captureId
+        };
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+        const res = await fetch(`${BACKEND_URL}/api/reports/save`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error("DynamoDB save failed");
 
-    await db.add('reports', {
-        ticketId,
-        timestamp: Date.now(),
-        jurisdiction: draft.jurisdiction,
-        status: 'SUBMITTED',
-        captureId
-    });
+        // Also save to IndexedDB for offline tracking
+        const db = await openDB('SewaSahayakDB', 1);
+        if (db.objectStoreNames.contains('reports')) {
+            await db.add('reports', payload);
+        }
+    } catch (error) {
+        console.error("Failed to save report to backend", error);
+        alert(`DynamoDB Save Error: ${error.message}`);
+    }
 };
 
-// Mock Upload to S3
 export const uploadEvidenceToS3 = async (blob, ticketId) => {
     console.log(`[Amazon S3] Encrypting (AES-256) and uploading evidence for ticket: ${ticketId} to ap-south-1...`);
-    // Simulate network
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    return `s3://sewa-sahayak-evidence-mumbai/reports/${ticketId}/evidence.blob`;
+    try {
+        const formData = new FormData();
+        formData.append("evidence", blob, "evidence.jpg");
+        formData.append("ticketId", ticketId);
+
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+        const res = await fetch(`${BACKEND_URL}/api/evidence/upload`, {
+            method: "POST",
+            body: formData
+        });
+        if (!res.ok) throw new Error("S3 Upload Failed");
+        const data = await res.json();
+        return data.s3_uri;
+    } catch (error) {
+        console.error("Failed to upload evidence to backend S3", error);
+        alert(`S3 Upload Error: ${error.message}`);
+        return `s3://mock-fallback/${ticketId}/evidence.blob`;
+    }
 };
 
 // Browser Push Notification Wrapper
