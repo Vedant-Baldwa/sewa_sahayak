@@ -21,7 +21,7 @@ export const mockRedactMedia = async (mediaBlob) => {
         const platesRedacted = parseInt(response.headers.get("X-Plates-Redacted") || "0", 10);
 
         const redactedBlob = await response.blob();
-        redactedBlob.isRedacted = true;
+        // Do not mutate `redactedBlob.isRedacted = true` here as it causes DataCloneError in IndexedDB
 
         return {
             redactedFile: redactedBlob,

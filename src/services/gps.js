@@ -21,14 +21,9 @@ export const getDeviceLocation = async () => {
                 });
             },
             (err) => {
-                // Fallback for mocked local testing without permissions
-                console.warn("Geolocation failed, using mock location", err);
-                resolve({
-                    lat: 19.0760, // Mumbai Mock
-                    lng: 72.8777,
-                    accuracy: 50,
-                    timestamp: Date.now()
-                });
+                // Reject rather than mocking, to enforce manual location via UI
+                console.warn("Geolocation failed or denied", err);
+                reject(new Error("Location permission denied or unavailable."));
             },
             { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
         );
