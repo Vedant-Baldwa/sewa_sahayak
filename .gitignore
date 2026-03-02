@@ -26,3 +26,12 @@ dist-ssr
 # Python Backend
 backend/venv/
 backend/__pycache__/
+
+# Environment variables (secrets) — never commit these!
+.env
+backend/.env
+
+# Logs and temp data files
+push.log
+out.log
+events.json
