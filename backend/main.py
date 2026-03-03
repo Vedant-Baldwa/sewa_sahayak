@@ -19,6 +19,7 @@ import uuid
 from aws_services.transcribe import upload_audio_to_s3, start_transcription_job, poll_transcription_job, extract_transcript
 from aws_services.location import reverse_geocode, verify_address
 from aws_services.bedrock import get_portal_routing
+from aws_services.nova_act_scraper import extract_form_fields
 import json
 import os
 import traceback
@@ -409,7 +410,7 @@ except Exception:
 
 # Feature 5 Endpoint: Cognitive Dispatcher
 @app.post("/api/route")
-async def route_complaint(route_req: RouteRequest):
+def route_complaint(route_req: RouteRequest):
     print(f"[Cognitive Dispatcher] Processing routing request: {route_req}")
     structured_address = None
     
@@ -449,9 +450,22 @@ async def route_complaint(route_req: RouteRequest):
     if not routing_result:
         raise HTTPException(status_code=500, detail="Failed to route complaint")
         
+    # --- Nova Act: Extract form fields from the routed portal ---
+    form_fields = {}
+    portal_url = routing_result.get("portal_url", "")
+    portal_name = routing_result.get("portal_name", "Unknown")
+    if portal_url:
+        try:
+            print(f"[Nova Act] Scraping form fields from: {portal_name} ({portal_url})")
+            form_fields = extract_form_fields(portal_url=portal_url, portal_name=portal_name)
+        except Exception as e:
+            print(f"[Nova Act] Scraping failed for {portal_name}, continuing without form fields: {e}")
+            form_fields = {"error": str(e)}
+
     return {
         "structured_address": structured_address,
-        "routing": routing_result
+        "routing": routing_result,
+        "form_schema": form_fields
     }
 
 # Feature 6 Endpoint

@@ -30,7 +30,7 @@ Output Format: (Strict JSON)
 
     try:
         response = bedrock_client.invoke_model(
-            modelId="amazon.nova-pro-v1:0",
+            modelId="amazon.nova-micro-v1:0",
             body=json.dumps({
                 "system": [{"text": system_prompt}],
                 "messages": messages,

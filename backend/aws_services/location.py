@@ -62,9 +62,9 @@ def verify_address(state: str, city: str, address: str):
         print(f"Verify Address Error: {e}")
         return None
 
-# Test the function
-print("--- Reverse Geocode Result ---")
-print(json.dumps(reverse_geocode(23.032693, 72.642445), indent=4))
+# # Test the function
+# print("--- Reverse Geocode Result ---")
+# print(json.dumps(reverse_geocode(23.032693, 72.642445), indent=4))
 
-print("--- Verify Address Result ---")
-print(json.dumps(verify_address("Gujarat", "Ahmedabad", "patel"), indent=4))
+# print("--- Verify Address Result ---")
+# print(json.dumps(verify_address("Gujarat", "Ahmedabad", "patel"), indent=4))
