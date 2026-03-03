@@ -8,3 +8,5 @@ authlib
 httpx
 itsdangerous
 Pillow
+nova-act
+playwright
