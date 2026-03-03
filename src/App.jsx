@@ -113,7 +113,7 @@ function App() {
 
     try {
       locationData = await getDeviceLocation();
-      jurisdiction = mapJurisdiction(locationData.lat, locationData.lng);
+      jurisdiction = await mapJurisdiction(locationData.lat, locationData.lng);
 
       // If success, proceed to save directly
       await finalizeCapture({
