@@ -45,7 +45,11 @@ def redact_image_pii(image_bytes: bytes) -> tuple[bytes, int, int]:
 
         # 4. Save and return
         buf = io.BytesIO()
-        image.save(buf, format=image.format or "JPEG")
+        fmt = image.format  # Pillow preserves format when opened from BytesIO with a valid header
+        if not fmt:
+            # Fallback: detect from magic bytes
+            fmt = "PNG" if image_bytes[:8] == b'\x89PNG\r\n\x1a\n' else "JPEG"
+        image.save(buf, format=fmt)
         return buf.getvalue(), faces_count, text_count
     except Exception as e:
         print(f"[Rekognition Redaction] Error: {e}")
