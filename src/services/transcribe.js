@@ -9,6 +9,7 @@ export const transcribeAudioWithAWS = async (audioBlob, language = 'hi-IN') => {
 
     const formData = new FormData();
     formData.append('audio', audioBlob, 'voice_note.webm');
+    formData.append('language', language);
 
     try {
         const response = await fetch(`${BACKEND_URL}/api/transcribe`, {

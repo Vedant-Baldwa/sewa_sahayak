@@ -26,6 +26,7 @@ export const redactMediaWithRekognition = async (mediaBlob) => {
         const platesRedacted = parseInt(response.headers.get("X-Plates-Redacted") || "0", 10);
 
         const redactedBlob = await response.blob();
+        // Do not mutate `redactedBlob.isRedacted = true` here as it causes DataCloneError in IndexedDB
 
         return {
             redactedFile: redactedBlob,
