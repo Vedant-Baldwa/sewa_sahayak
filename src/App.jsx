@@ -4,16 +4,16 @@ import AudioRecorder from './components/AudioRecorder';
 import { Camera, Video, CheckCircle, RefreshCw } from 'lucide-react';
 import { saveMediaLocally, getUnsyncedMedia, markMediaAsSynced } from './utils/db';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
-import { mockTranscribeAudio } from './services/transcribe';
-import { mockAnalyzeMedia } from './services/bedrock';
-import { mockRedactMedia } from './services/rekognition';
-import { getDeviceLocation, mapJurisdiction } from './services/gps';
+import { transcribeAudioWithAWS } from './services/transcribe';
+import { analyzeMediaWithBedrock } from './services/bedrock';
+import { redactMediaWithRekognition } from './services/rekognition';
+import { getDeviceLocation } from './services/gps';
 import DraftReview from './components/DraftReview';
 import AgenticSubmission from './components/AgenticSubmission';
 import Auth from './components/Auth';
 import { uploadEvidenceToS3, saveReportToDynamoDB, sendPushNotification } from './services/tracking';
 import MyReports from './components/MyReports';
-import { Shield, MapPin, FileText, UserCircle } from 'lucide-react';
+import { Shield, MapPin, FileText, UserCircle, AlertCircle } from 'lucide-react';
 
 function App() {
   const isOnline = useOnlineStatus();
@@ -23,6 +23,9 @@ function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isRedacting, setIsRedacting] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState(null);
+  const [pendingCapture, setPendingCapture] = useState(null);
+  const [manualLocationInput, setManualLocationInput] = useState('');
   const [selectedCaptureForDraft, setSelectedCaptureForDraft] = useState(null);
   const [activeSubmissionDraft, setActiveSubmissionDraft] = useState(null);
   const [user, setUser] = useState(null);
@@ -107,35 +110,108 @@ function App() {
     setIsLocating(true);
     let locationData = null;
     let jurisdiction = null;
+
     try {
       locationData = await getDeviceLocation();
-      jurisdiction = mapJurisdiction(locationData.lat, locationData.lng);
+
+      // ── Real Server-side Routing via Amazon Bedrock ──
+      const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+      const routeRes = await fetch(`${BACKEND_URL}/api/route`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          lat: locationData.lat,
+          lng: locationData.lng
+        })
+      });
+
+      if (routeRes.ok) {
+        const routeData = await routeRes.json();
+        jurisdiction = {
+          jurisdiction_level: routeData.routing?.portal_name === 'CPGRAMS' ? 'Central' : 'Local/State',
+          portal_name: routeData.routing?.portal_name || 'Government Portal',
+          portal_url: routeData.routing?.portal_url || '',
+          ward_district: routeData.structured_address?.District || routeData.structured_address?.City || 'Unknown Ward',
+          mapped_coordinates: { lat: locationData.lat, lng: locationData.lng }
+        };
+        // Update locationData with reverse-geocoded address from backend
+        locationData.address = routeData.structured_address?.Address || '';
+      }
+
+      await finalizeCapture({
+        blob, type, previewUrl, timestamp, jurisdiction, locationData, additionalMetaData
+      });
+
     } catch (err) {
-      console.warn("Location capture failed", err);
+      console.warn("Location capture failed, requesting manual entry", err);
+      setPendingCapture({ blob, type, previewUrl, timestamp, additionalMetaData });
+      setLocationError("We couldn't reach your device GPS. Manual location entry is required.");
     } finally {
       setIsLocating(false);
     }
+  };
 
-    const metadata = { previewUrl, jurisdiction, ...additionalMetaData };
-    // Save locally via IndexedDB
-    const id = await saveMediaLocally(blob, type, metadata);
+  const submitManualLocation = async () => {
+    try {
+      if (!manualLocationInput.trim()) return;
 
-    const newCapture = {
-      id,
-      blob,
-      type,
-      timestamp,
-      synced: isOnline,
-      ...metadata
-    };
+      // Use a basic mock mapping for the manual string for demo purposes
+      // Real implementation would use Google Maps Geocoding API to get Lat/Lng
+      const manualJurisdiction = {
+        jurisdiction_level: "Municipal",
+        portal_name: "Manual Entry Jurisdiction",
+        portal_url: "https://mock.gov.in/report",
+        ward_district: manualLocationInput,
+        mapped_coordinates: { lat: 0, lng: 0 } // Default proxy
+      };
 
-    setCaptures(prev => [newCapture, ...prev]);
+      await finalizeCapture({
+        ...pendingCapture,
+        jurisdiction: manualJurisdiction,
+        locationData: { address: manualLocationInput }
+      });
 
-    // If online, mock immediate sync
-    if (isOnline) {
-      setTimeout(async () => {
-        await markMediaAsSynced(id);
-      }, 500);
+      // Cleanup states
+      setLocationError(null);
+      setPendingCapture(null);
+      setManualLocationInput('');
+    } catch (err) {
+      console.error("Manual Entry Error:", err);
+      alert("Error saving manual location: " + err.message);
+    }
+  };
+
+  const finalizeCapture = async ({ blob, type, previewUrl, timestamp, jurisdiction, locationData, additionalMetaData }) => {
+    try {
+      const metadata = { previewUrl, jurisdiction, locationData, ...additionalMetaData };
+
+      // Save locally via IndexedDB
+      const id = await saveMediaLocally(blob, type, metadata);
+
+      const newCapture = {
+        id,
+        blob,
+        type,
+        timestamp,
+        synced: isOnline,
+        ...metadata
+      };
+
+      setCaptures(prev => [newCapture, ...prev]);
+
+      // If online, mock immediate sync
+      if (isOnline) {
+        setTimeout(async () => {
+          try {
+            await markMediaAsSynced(id);
+          } catch (syncErr) { }
+        }, 500);
+      }
+    } catch (err) {
+      console.error("Finalize Capture Error:", err);
+      alert("Failed to finalize capture: " + err.message);
+      throw err;
     }
   };
 
@@ -144,7 +220,7 @@ function App() {
     let finalFile = file;
     let redactionInfo = null;
     try {
-      const redactionResult = await mockRedactMedia(file);
+      const redactionResult = await redactMediaWithRekognition(file);
       finalFile = redactionResult.redactedFile;
       redactionInfo = { faces: redactionResult.facesRedacted, plates: redactionResult.platesRedacted };
     } catch (err) {
@@ -155,7 +231,7 @@ function App() {
 
     setIsAnalyzing(true);
     try {
-      const analysis = await mockAnalyzeMedia(finalFile, type);
+      const analysis = await analyzeMediaWithBedrock(finalFile, type);
       await handleMediaCapture(finalFile, type, { analysis, redaction: redactionInfo });
     } catch (err) {
       console.error("Analysis failed", err);
@@ -178,7 +254,7 @@ function App() {
   const onAudioRecorded = async (audioBlob) => {
     setIsTranscribing(true);
     try {
-      const transcriptionResult = await mockTranscribeAudio(audioBlob);
+      const transcriptionResult = await transcribeAudioWithAWS(audioBlob);
       await handleMediaCapture(audioBlob, 'audio', { transcription: transcriptionResult });
     } catch (err) {
       console.error("Transcription failed", err);
@@ -188,12 +264,15 @@ function App() {
     }
   };
 
-  const handleDraftSubmit = (compiledDraft) => {
+  const handleDraftSubmit = (compiledDraft, formSchema = {}) => {
     console.log("Submitting final draft:", compiledDraft);
     setActiveSubmissionDraft({
       ...compiledDraft,
       captureId: selectedCaptureForDraft.id,
-      captureBlob: selectedCaptureForDraft.blob
+      captureBlob: selectedCaptureForDraft.blob,
+      form_schema: formSchema,                          // from Nova Act via DraftReview
+      portal_url: compiledDraft.portal_url || selectedCaptureForDraft.jurisdiction?.portal_url || '',
+      portal_name: compiledDraft.portal_name || selectedCaptureForDraft.jurisdiction?.portal_name || 'Government Portal',
     });
     setSelectedCaptureForDraft(null);
   };
@@ -261,6 +340,55 @@ function App() {
     );
   }
 
+  if (locationError && pendingCapture) {
+    return (
+      <>
+        <header className="app-header">
+          <h1 className="heading-2 text-gradient">Sewa Sahayak</h1>
+        </header>
+        <main className="app-main" style={{ justifyContent: 'center' }}>
+          <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center' }}>
+            <MapPin size={48} color="var(--color-danger)" style={{ margin: '0 auto 1rem' }} />
+            <h2 className="heading-2" style={{ marginBottom: '1rem' }}>Location Required</h2>
+            <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
+              {locationError}
+            </p>
+            <div className="input-group" style={{ textAlign: 'left' }}>
+              <label className="input-label">Enter exact location manually (Landmark, Street, City)</label>
+              <input
+                type="text"
+                className="input-field"
+                placeholder="e.g. Opposite Metro Pillar 42, Andheri East"
+                value={manualLocationInput}
+                onChange={(e) => setManualLocationInput(e.target.value)}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+              <button
+                className="btn btn-secondary"
+                style={{ flex: 1 }}
+                onClick={() => {
+                  setLocationError(null);
+                  setPendingCapture(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1 }}
+                disabled={!manualLocationInput.trim()}
+                onClick={submitManualLocation}
+              >
+                Save Location
+              </button>
+            </div>
+          </div>
+        </main>
+      </>
+    );
+  }
+
   return (
     <>
       <header className="app-header">
@@ -315,25 +443,25 @@ function App() {
             {isTranscribing && (
               <div style={{ background: 'var(--color-bg)', padding: '1rem', borderRadius: '12px', textAlign: 'center', color: 'var(--color-primary)' }}>
                 <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 0.5rem' }} />
-                <p style={{ fontSize: '0.9rem', fontWeight: '500' }}>Processing Regional Voice via AWS Transcribe...</p>
+                <p style={{ fontSize: '0.9rem', fontWeight: '500' }}>Processing Regional Voice via Bedrock Analysis Agent...</p>
               </div>
             )}
             {isRedacting && (
               <div style={{ background: 'var(--color-bg)', padding: '1rem', borderRadius: '12px', textAlign: 'center', color: 'var(--color-success)' }}>
                 <Shield size={24} className="animate-pulse" style={{ margin: '0 auto 0.5rem' }} />
-                <p style={{ fontSize: '0.9rem', fontWeight: '500' }}>Applying DPDP Privacy Guardrails (Redacting PII)...</p>
+                <p style={{ fontSize: '0.9rem', fontWeight: '500' }}>Applying Privacy Engine Guardrails (Redacting PII)...</p>
               </div>
             )}
             {isAnalyzing && (
               <div style={{ background: 'var(--color-bg)', padding: '1rem', borderRadius: '12px', textAlign: 'center', color: 'var(--color-secondary)' }}>
                 <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 0.5rem' }} />
-                <p style={{ fontSize: '0.9rem', fontWeight: '500' }}>Analyzing Media via Amazon Bedrock (Nova Pro)...</p>
+                <p style={{ fontSize: '0.9rem', fontWeight: '500' }}>Analyzing Media via Bedrock Analysis Agent (Nova Pro)...</p>
               </div>
             )}
             {isLocating && (
               <div style={{ background: 'var(--color-bg)', padding: '1rem', borderRadius: '12px', textAlign: 'center', color: 'var(--color-text-main)' }}>
                 <MapPin size={24} className="animate-pulse" style={{ margin: '0 auto 0.5rem' }} />
-                <p style={{ fontSize: '0.9rem', fontWeight: '500' }}>Extracting GPS & Mapping Jurisdiction...</p>
+                <p style={{ fontSize: '0.9rem', fontWeight: '500' }}>Mapping via Portal Router...</p>
               </div>
             )}
           </div>
@@ -342,7 +470,7 @@ function App() {
         {captures.length > 0 && (
           <div className="glass-panel" style={{ padding: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 className="heading-2" style={{ fontSize: '1.25rem' }}>Recent Evidence</h3>
+              <h3 className="heading-2" style={{ fontSize: '1.25rem' }}>Evidence Capture Module</h3>
               {isSyncing && (
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', color: 'var(--color-primary)' }}>
                   <RefreshCw size={14} className="animate-spin" />
@@ -379,6 +507,18 @@ function App() {
                           <span style={{ fontSize: '0.7rem', background: 'var(--color-danger)', color: 'white', padding: '2px 6px', borderRadius: '4px' }}>Severity: {capture.analysis.severity}</span>
                           <span style={{ fontSize: '0.7rem', background: 'var(--color-success)', color: 'white', padding: '2px 6px', borderRadius: '4px' }}>AI Conf: {(capture.analysis.confidence_score * 100).toFixed(0)}%</span>
                         </div>
+                        {capture.analysis.media_quality === 'poor' && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', color: 'var(--color-warning)' }}>
+                            <AlertCircle size={14} />
+                            <span style={{ fontSize: '0.75rem', fontWeight: '600' }}>Poor Media Quality: Please consider a clearer shot.</span>
+                          </div>
+                        )}
+                        {capture.analysis.needs_human_review && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', color: 'var(--color-danger)' }}>
+                            <Shield size={14} />
+                            <span style={{ fontSize: '0.75rem', fontWeight: '600' }}>Human Review Required: PII detection uncertain.</span>
+                          </div>
+                        )}
                       </div>
                     )}
                     {capture.redaction && (capture.redaction.faces > 0 || capture.redaction.plates > 0) && (

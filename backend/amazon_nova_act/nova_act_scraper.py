@@ -9,6 +9,9 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 try:
     from nova_act import NovaAct, workflow
+    # The workflow labels provided by the user are in us-east-1
+    os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+    os.environ["AWS_REGION"] = "us-east-1"
     from aws_services.check_portal_health import check_portal_health
 except ImportError:
     print("Nova Act SDK or required module is not installed.")
@@ -109,10 +112,6 @@ def extract_form_fields(portal_url: str, portal_name: str = "Unknown Portal") ->
 
     except Exception as e:
         error_msg = str(e)
-        if "Failed to start and initialize Playwright" in error_msg:
-            # Mask the noisy playwright error triggered by advanced bot detection scripts during load
-            error_msg = "Browser initialization failed. The portal might be actively blocking automated scrapers."
-            
         print(f"[Nova Act] Error scraping {portal_name}: {error_msg}")
         return {
             "portal_url": portal_url,
