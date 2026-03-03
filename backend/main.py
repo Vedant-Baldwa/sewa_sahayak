@@ -1,11 +1,16 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
+from fastapi.requests import Request
 from starlette.middleware.sessions import SessionMiddleware
+from pydantic import BaseModel
 from core.config import Config
 from api.router import auth, evidence, reports, ai, agentic
 import os
+import uuid
+import time
+import json
 
 app = FastAPI(title="Sewa Sahayak API - Modular")
 
@@ -480,18 +485,16 @@ async def mock_generate_draft(data: dict):
         "description": f"To the concerned authority,\n\nI am reporting a issue regarding civic hazard.\n\nDetails:\n{description}\n\nPlease address this at your earliest convenience.\n\nThank you.",
     }
 
-# Serve static assets from Vite dist folder
-app.mount("/assets", StaticFiles(directory="../dist/assets"), name="assets")
+# Serve static assets from Vite dist folder (only when built)
+_DIST_ASSETS = os.path.join(os.path.dirname(__file__), "..", "dist", "assets")
+if os.path.exists(_DIST_ASSETS):
+    app.mount("/assets", StaticFiles(directory=_DIST_ASSETS), name="assets_static")
 
-# Optional: serve public files like images/icons if they exist in dist root
-@app.get("/{file_name:path}")
-async def serve_static_root(file_name: str):
-    if file_name.startswith("api/"):
-        return
-    
-    file_path = os.path.join("../dist", file_name)
-    if os.path.isfile(file_path):
-        return FileResponse(file_path)
-    
-    # SPA fallback: Serve index.html for unknown routes
-    return FileResponse("../dist/index.html")
+    @app.get("/{file_name:path}")
+    async def serve_static_root(file_name: str):
+        if file_name.startswith("api/"):
+            return
+        file_path = os.path.join(os.path.dirname(__file__), "..", "dist", file_name)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(os.path.join(os.path.dirname(__file__), "..", "dist", "index.html"))
