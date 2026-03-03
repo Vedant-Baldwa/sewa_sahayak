@@ -1,59 +1,46 @@
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
-
-from fastapi import FastAPI, File, UploadFile, Form
-from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Depends
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
-from pydantic import BaseModel
+from fastapi.responses import FileResponse
 from starlette.middleware.sessions import SessionMiddleware
-from authlib.integrations.starlette_client import OAuth
-from dotenv import load_dotenv
-import mimetypes
-import time
-import uuid
-from aws_services.transcribe import upload_audio_to_s3, start_transcription_job, poll_transcription_job, extract_transcript
-from aws_services.location import reverse_geocode, verify_address
-from aws_services.bedrock import get_portal_routing
-from aws_services.nova_act_scraper import extract_form_fields
-import json
+from core.config import Config
+from api.router import auth, evidence, reports, ai, agentic
 import os
-import traceback
 
-# Load environment variables from .env file
-load_dotenv()
+app = FastAPI(title="Sewa Sahayak API - Modular")
 
-mimetypes.add_type("application/javascript", ".js")
-mimetypes.add_type("text/css", ".css")
-
-app = FastAPI(title="Sewa Sahayak PWA API (Mock)")
-
-# CORS Middleware to allow requests from the Vite frontend
+# Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=".*",
+    allow_origins=[Config.FRONTEND_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(SessionMiddleware, secret_key=Config.SECRET_KEY)
 
-# Session Middleware for Authlib OAuth
-app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY") or os.urandom(24).hex())
-
-oauth = OAuth()
-oauth.register(
-    name='cognito',
-    client_id=os.getenv("COGNITO_CLIENT_ID"),
-    client_secret=os.getenv("COGNITO_CLIENT_SECRET"),
-    server_metadata_url=f"https://cognito-idp.{os.getenv('AWS_REGION', 'ap-south-1')}.amazonaws.com/{os.getenv('COGNITO_USER_POOL_ID')}/.well-known/openid-configuration",
-    client_kwargs={'scope': 'email openid phone'}
-)
+# Routers
+app.include_router(auth.router)
+app.include_router(evidence.router)
+app.include_router(reports.router)
+app.include_router(ai.router)
+app.include_router(agentic.router)
 
 @app.get("/api/health")
+def health():
+    return {"status": "running", "version": "2.0.0-modular"}
+
+# SPA Support (Serve Vite build)
+DIST_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dist")
+if os.path.exists(DIST_DIR):
+    app.mount("/assets", StaticFiles(directory=os.path.join(DIST_DIR, "assets")), name="assets")
+    
+    @app.get("/{file_path:path}")
+    async def serve_spa(file_path: str):
+        if file_path.startswith("api/"): return
+        full_path = os.path.join(DIST_DIR, file_path)
+        if os.path.isfile(full_path): return FileResponse(full_path)
+        return FileResponse(os.path.join(DIST_DIR, "index.html"))
 def read_root():
     return {"message": "Sewa Sahayak AWS API Running"}
 
