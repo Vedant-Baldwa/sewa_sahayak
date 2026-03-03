@@ -152,37 +152,28 @@ def _nova_act_master_flow(portal_url: str, portal_name: str, draft: dict, sessio
 
         nova.act(fill_instructions)
 
-        # --- PHASE 6: Captcha Resolution (Auto -> HITL) ---
+        # --- PHASE 6: Captcha Resolution (User-Only HITL) ---
         _step(session, "captcha", "Checking for security challenges...")
         class _CheckCaptcha(BaseModel):
             visible: bool
 
         c_check = nova.act_get("Is there an unsolved captcha?", schema=_CheckCaptcha.model_json_schema())
         if c_check.parsed_response and c_check.parsed_response.get("visible"):
-            _step(session, "captcha", "Security CAPTCHA detected. Attempting autonomous vision solve...")
-            try:
-                # Attempt vision solve
-                nova.act("Look at the captcha and fill the solution. If solved, the submit button will enable.")
-                time.sleep(1)
-                final_check = nova.act_get("Is the captcha solved or cleared?", schema=_CheckCaptcha.model_json_schema())
-                auto_solved = not (final_check.parsed_response and final_check.parsed_response.get("visible"))
-            except:
-                auto_solved = False
-
-            if not auto_solved:
-                _step(session, "captcha", "Autonomous solve failed. Requesting human verification.")
-                try: 
-                    session["captcha_screenshot_b64"] = nova.screenshot_base_64()
-                except: pass
-                
-                sol = hitl_request(
-                    "Please solve the security challenge below:",
-                    fields=["captcha_solution"],
-                    type="captcha"
-                ).get("captcha_solution")
-                nova.act(f"Type the solution '{sol}' into the captcha field.")
-            else:
-                _step(session, "captcha", "Agent successfully bypassed security CAPTCHA!")
+            _step(session, "captcha_hitl", "Security CAPTCHA detected. Requesting manual human verification.")
+            try: 
+                session["captcha_screenshot_b64"] = nova.screenshot_base_64()
+            except: pass
+            
+            sol = hitl_request(
+                "A security CAPTCHA is required. Please solve it below:",
+                fields=["captcha_solution"],
+                type="captcha"
+            ).get("captcha_solution")
+            
+            _step(session, "applying_captcha", "Applying your CAPTCHA solution...")
+            nova.act(f"Type the solution '{sol}' into the captcha field.")
+        else:
+            _step(session, "captcha_none", "No CAPTCHA detected. Proceeding...")
 
         # --- PHASE 7: Final Human-in-the-Loop Verification ---
         _step(session, "verification", "Form is fully populated. Final Human Review required.")
