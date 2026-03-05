@@ -42,7 +42,42 @@ async def authorize(request: Request):
 async def get_me(request: Request):
     user = request.session.get('user')
     if not user: raise HTTPException(status_code=401)
-    return {"user": user}
+    
+    uid = user.get('sub')
+    user_data = {}
+    if users_table:
+        try:
+            res = users_table.get_item(Key={'userId': uid})
+            user_data = res.get('Item', {})
+        except: pass
+            
+    return {"user": user, "userData": user_data}
+
+@router.post("/api/auth/profile")
+async def update_profile(request: Request, data: dict):
+    user = request.session.get('user')
+    if not user: raise HTTPException(status_code=401)
+    uid = user.get('sub')
+    
+    if users_table:
+        try:
+            users_table.update_item(
+                Key={'userId': uid},
+                UpdateExpression="set fullName=:fn, phoneNumber=:pn, address=:addr, age=:age, gender=:gen, updatedAt=:ua, onboardingComplete=:oc",
+                ExpressionAttributeValues={
+                    ':fn': data.get('fullName'),
+                    ':pn': data.get('phoneNumber'),
+                    ':addr': data.get('address'),
+                    ':age': data.get('age'),
+                    ':gen': data.get('gender'),
+                    ':ua': str(int(time.time())),
+                    ':oc': True
+                }
+            )
+            return {"status": "ok"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    return {"status": "error", "message": "DB not ready"}
 
 @router.post("/api/auth/logout")
 async def logout(request: Request):

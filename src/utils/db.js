@@ -1,8 +1,9 @@
 import { openDB } from 'idb';
 
 const DB_NAME = 'SewaSahayakDB';
-const DB_VERSION = 4;
+const DB_VERSION = 6;
 const STORE_NAME = 'media_captures';
+const REPORTS_STORE = 'reports';
 
 export const initDB = async () => {
     return openDB(DB_NAME, DB_VERSION, {
@@ -11,6 +12,10 @@ export const initDB = async () => {
                 const store = db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
                 store.createIndex('timestamp', 'timestamp');
                 store.createIndex('synced', 'synced');
+            }
+            if (!db.objectStoreNames.contains(REPORTS_STORE)) {
+                const store = db.createObjectStore(REPORTS_STORE, { keyPath: 'id' });
+                store.createIndex('timestamp', 'timestamp');
             }
         },
     });

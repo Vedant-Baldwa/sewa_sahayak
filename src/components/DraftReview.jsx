@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, ArrowLeft, Send, Bot } from 'lucide-react';
+import { Loader2, ArrowLeft, Send, Bot, Shield, Globe } from 'lucide-react';
+
+import { saveReportDraft } from '../services/tracking';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
@@ -12,9 +14,7 @@ export default function DraftReview({ capture, onClose, onSubmit }) {
     useEffect(() => {
         async function fetchRouteAndDraft() {
             try {
-                // ── Step 1: Get portal routing + Web Bridge Agent form schema ────────
-                setStatusMsg('Portal Router is analyzing location to identify the correct jurisdiction…');
-
+                setStatusMsg('Analyzing location for jurisdiction mapping…');
                 const locationData = capture.locationData || {};
                 const jurisdiction = capture.jurisdiction || {};
 
@@ -27,8 +27,7 @@ export default function DraftReview({ capture, onClose, onSubmit }) {
                         lng: locationData.lng || null,
                         state: locationData.State || locationData.state || null,
                         city: locationData.City || locationData.city || null,
-                        address: locationData.Address || locationData.address ||
-                            jurisdiction.ward_district || null,
+                        address: locationData.Address || locationData.address || jurisdiction.ward_district || null,
                     }),
                 });
 
@@ -39,45 +38,38 @@ export default function DraftReview({ capture, onClose, onSubmit }) {
                     schema = routeData.form_schema || {};
                     routing = routeData.routing || {};
                     setFormSchema(schema);
-
-                    // Check if Nova Act actually scraped form fields
-                    if (schema.fields && schema.fields.length > 0) {
-                        setStatusMsg(`Portal Router identified ${routing.portal_name}. Web Bridge Agent extracted ${schema.fields.length} form fields.`);
-                    } else {
-                        setStatusMsg(`Portal Router identified ${routing.portal_name}. Generating complaint via Bedrock Analysis Agent…`);
-                    }
-                } else {
-                    setStatusMsg('Bedrock Analysis Agent is synthesizing your complaint draft…');
+                    setStatusMsg(`Mapped to ${routing.portal_name}. Compiling evidence via Bedrock…`);
                 }
-
-                // ── Step 2: Generate formal draft via Bedrock ────────────────
-                setStatusMsg(prev => prev.includes('Bedrock') ? prev : 'Bedrock Analysis Agent is drafting a formal complaint…');
-
-                const draftPayload = {
-                    ...capture,
-                    form_schema: {
-                        ...schema,
-                        portal_url: routing.portal_url || jurisdiction.portal_url || '',
-                        portal_name: routing.portal_name || jurisdiction.portal_name || '',
-                    },
-                };
 
                 const draftRes = await fetch(`${BACKEND_URL}/api/draft`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',
-                    body: JSON.stringify(draftPayload),
+                    body: JSON.stringify({
+                        ...capture,
+                        form_schema: {
+                            ...schema,
+                            portal_url: routing.portal_url || jurisdiction.portal_url || '',
+                            portal_name: routing.portal_name || jurisdiction.portal_name || '',
+                        },
+                    }),
                 });
 
-                if (!draftRes.ok) throw new Error('Draft generation API failed');
+                if (!draftRes.ok) throw new Error('Draft generation failed');
                 const generatedDraft = await draftRes.json();
-
-                // Carry portal + form metadata into the draft for submission
                 generatedDraft.portal_url = generatedDraft.portal_url || routing.portal_url || '';
                 generatedDraft.portal_name = generatedDraft.portal_name || routing.portal_name || '';
                 generatedDraft.form_schema = schema;
 
+                // Default damage type to Pothole if unspecified or generic
+                if (!generatedDraft.damageType || generatedDraft.damageType.toLowerCase().includes('unknown')) {
+                    generatedDraft.damageType = 'Pothole / Road Infrastructure';
+                }
+
                 setDraft(generatedDraft);
+
+                // Initial save to history as DRAFT
+                await saveReportDraft(generatedDraft, capture);
             } catch (err) {
                 console.error('Draft generation failed', err);
             } finally {
@@ -89,102 +81,111 @@ export default function DraftReview({ capture, onClose, onSubmit }) {
 
     const handleChange = (e) => {
         const { name, value } = e.target;
-        setDraft(prev => ({ ...prev, [name]: value }));
+        const updatedDraft = { ...draft, [name]: value };
+        setDraft(updatedDraft);
+        // Save changes to local history
+        saveReportDraft(updatedDraft, capture);
     };
 
     if (isGenerating) {
         return (
-            <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
-                <Loader2 size={48} className="animate-spin" color="var(--color-primary)" style={{ marginBottom: '1rem' }} />
-                <h2 className="heading-2">Preparing Application…</h2>
-                <p style={{ color: 'var(--color-text-muted)', marginTop: '0.5rem', fontSize: '0.9rem' }}>{statusMsg}</p>
+            <div className="glass-panel animate-scale-in" style={{ padding: '4rem', textAlign: 'center' }}>
+                <Loader2 size={48} className="animate-spin" color="var(--color-primary)" style={{ marginBottom: '1.5rem' }} />
+                <h2 className="text-gradient" style={{ fontSize: '1.8rem' }}>Synthesizing Formal Report</h2>
+                <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>{statusMsg}</p>
             </div>
         );
     }
 
-    if (!draft) {
-        return (
-            <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center' }}>
-                <p>Failed to generate draft. Please try again.</p>
-                <button className="btn btn-secondary" onClick={onClose}>Go Back</button>
-            </div>
-        );
-    }
+    if (!draft) return null;
 
     return (
-        <div className="glass-panel" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
-                <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                    <ArrowLeft size={24} color="var(--color-text-main)" />
+        <div className="glass-panel animate-scale-in" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1.5rem', borderBottom: 'var(--glass-border)' }}>
+                <button onClick={onClose} className="secondary-btn-3d" style={{ padding: '0.5rem', borderRadius: '10px' }}>
+                    <ArrowLeft size={20} />
                 </button>
-                <h2 className="heading-2" style={{ fontSize: '1.25rem', margin: 0 }}>Review Application</h2>
+                <h2 className="text-gradient" style={{ fontSize: '1.5rem' }}>Review Agent Proposal</h2>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
-                {draft.portal_name && (
-                    <div style={{ background: 'rgba(59,130,246,0.08)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.5rem', fontSize: '0.85rem', color: 'var(--color-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span>🏛️ Submitting to: <strong>{draft.portal_name}</strong></span>
-                        {draft.detected_language && (
-                            <span style={{ fontSize: '0.7rem', background: 'var(--color-primary)', color: 'white', padding: '2px 8px', borderRadius: '20px' }}>
-                                Translated from {draft.detected_language}
-                            </span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 400px) 1fr', gap: '2rem', padding: '2rem' }}>
+                {/* Left Column: Media Preview & Basic Info */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    {/* Media Preview */}
+                    <div style={{ position: 'relative', borderRadius: '24px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', boxShadow: '0 10px 30px rgba(0,0,0,0.3)' }}>
+                        {capture.type === 'image' ? (
+                            <img src={capture.previewUrl} alt="Captured Evidence" style={{ width: '100%', height: 'auto', display: 'block' }} />
+                        ) : capture.type === 'video' ? (
+                            <video src={capture.previewUrl} controls style={{ width: '100%', height: 'auto', display: 'block' }} />
+                        ) : (
+                            <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+                                <Globe size={48} style={{ opacity: 0.1 }} />
+                                <span style={{ marginLeft: 10 }}>Audio Evidence Captured</span>
+                            </div>
                         )}
+                        <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', padding: '4px 12px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: 800, color: 'white', border: '1px solid rgba(255,255,255,0.1)' }}>
+                            LIVE EVIDENCE
+                        </div>
                     </div>
-                )}
 
-                <p style={{ marginBottom: '1.5rem', fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
-                    Bedrock compiled your evidence into the formal complaint below. You can edit any field before submission.
-                </p>
+                    <div className="input-group">
+                        <label className="input-label">Jurisdiction</label>
+                        <input className="input-field" disabled value={`${draft.jurisdiction} — ${draft.ward}`} />
+                    </div>
 
-                <div className="input-group">
-                    <label className="input-label">Jurisdiction (Auto-Mapped)</label>
-                    <input className="input-field" disabled value={`${draft.jurisdiction} — ${draft.ward}`} />
+                    <div className="input-group">
+                        <label className="input-label">Issue Taxonomy</label>
+                        <input className="input-field" name="damageType" value={draft.damageType} onChange={handleChange} />
+                    </div>
+
+                    <div className="input-group">
+                        <label className="input-label">Severity Level</label>
+                        <select className="input-field" name="severity" value={draft.severity} onChange={handleChange}>
+                            <option value="Low">Low</option>
+                            <option value="Medium">Medium</option>
+                            <option value="High">High</option>
+                            <option value="Critical">Critical</option>
+                        </select>
+                    </div>
+
+                    <div className="input-group">
+                        <label className="input-label">Verified Applicant</label>
+                        <input className="input-field" name="applicantName" value={draft.applicantName} onChange={handleChange} />
+                    </div>
                 </div>
 
-                <div className="input-group">
-                    <label className="input-label">Issue Type</label>
-                    <input className="input-field" name="damageType" value={draft.damageType} onChange={handleChange} />
-                </div>
+                {/* Right Column: Detailed Description & Submission */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    <div className="input-group">
+                        <label className="input-label">Official Description</label>
+                        <textarea className="input-field" name="description" value={draft.description} onChange={handleChange} rows={10} style={{ resize: 'none' }} />
+                    </div>
 
-                <div className="input-group">
-                    <label className="input-label">Severity</label>
-                    <select className="input-field" name="severity" value={draft.severity} onChange={handleChange} style={{ appearance: 'none' }}>
-                        <option value="Low">Low</option>
-                        <option value="Medium">Medium</option>
-                        <option value="High">High</option>
-                        <option value="Critical">Critical</option>
-                    </select>
-                </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                        <div className="input-group">
+                            <label className="input-label">Portal Username</label>
+                            <input className="input-field" name="portalUsername" value={draft.portalUsername || ''} onChange={handleChange} placeholder="Optional" />
+                        </div>
+                        <div className="input-group">
+                            <label className="input-label">Portal Password</label>
+                            <input className="input-field" name="portalPassword" type="password" value={draft.portalPassword || ''} onChange={handleChange} placeholder="Optional" />
+                        </div>
+                    </div>
 
-                <div className="input-group">
-                    <label className="input-label">Detailed Description</label>
-                    <textarea className="input-field" name="description" value={draft.description} onChange={handleChange} rows={6} style={{ resize: 'vertical' }} />
-                </div>
-
-                <div className="input-group">
-                    <label className="input-label">Applicant Name</label>
-                    <input className="input-field" name="applicantName" value={draft.applicantName} onChange={handleChange} />
-                </div>
-
-                <div className="input-group">
-                    <label className="input-label">Phone Number</label>
-                    <input className="input-field" name="phoneNumber" value={draft.phoneNumber} onChange={handleChange} />
+                    <div style={{ marginTop: 'auto', background: 'rgba(59, 130, 246, 0.05)', padding: '1.5rem', borderRadius: '16px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1rem' }}>
+                            <Bot size={20} color="var(--color-primary)" />
+                            <span style={{ fontWeight: '700', fontSize: '0.9rem' }}>Autonomous Web Agent</span>
+                        </div>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+                            Launching the agent will automatically handle portal navigation, field mapping, and secure submission.
+                        </p>
+                        <button className="btn-3d" style={{ width: '100%' }} onClick={() => onSubmit(draft)}>
+                            Authorize Agent Deployment
+                        </button>
+                    </div>
                 </div>
             </div>
-
-            <div style={{ padding: '1rem', borderTop: '1px solid rgba(0,0,0,0.05)', background: 'rgba(255,255,255,0.8)' }}>
-                <button
-                    className="btn btn-primary"
-                    style={{ width: '100%', background: 'linear-gradient(135deg, var(--color-primary), var(--color-secondary))', border: 'none', height: '52px', fontWeight: 'bold' }}
-                    onClick={() => onSubmit(draft, formSchema)}
-                >
-                    <Bot size={22} />
-                    Launch Web Bridge Agent for Autofill
-                </button>
-                <p style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.5rem' }}>
-                    The <strong>Web Bridge Agent</strong> will automatically navigate the portal as part of the <strong>Human-in-the-Loop Interface</strong>.
-                </p>
-            </div>
-        </div>
+        </div >
     );
 }

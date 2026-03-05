@@ -1,65 +1,135 @@
 import React, { useEffect, useState } from 'react';
 import { openDB } from 'idb';
-import { Archive, Clock, MapPin } from 'lucide-react';
+import { initDB } from '../utils/db';
+import { Archive, Clock, MapPin, ArrowLeft, ChevronRight, FileText } from 'lucide-react';
 
 export default function MyReports({ onClose }) {
     const [reports, setReports] = useState([]);
 
     useEffect(() => {
         async function loadReports() {
-            const db = await openDB('SewaSahayakDB', 2);
-            if (db.objectStoreNames.contains('reports')) {
-                const tx = db.transaction('reports', 'readonly');
-                const store = tx.objectStore('reports');
-                const allReports = await store.getAll();
-                // Sort by timestamp desc
-                allReports.sort((a, b) => b.timestamp - a.timestamp);
-                setReports(allReports);
+            try {
+                const db = await initDB();
+                if (db?.objectStoreNames?.contains('reports')) {
+                    const tx = db.transaction('reports', 'readonly');
+                    const store = tx.objectStore('reports');
+                    const allReports = await store.getAll();
+                    allReports.sort((a, b) => b.timestamp - a.timestamp);
+                    setReports(allReports);
+                }
+            } catch (err) {
+                console.error("Failed to load reports from IndexedDB", err);
             }
         }
         loadReports();
     }, []);
 
     return (
-        <div className="glass-panel" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
-                <h2 className="heading-2">My Reports</h2>
-                <button className="btn btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }} onClick={onClose}>
-                    New Report
-                </button>
+        <div style={{ animation: 'fadeUp 0.6s ease', maxWidth: 800, margin: '0 auto', width: '100%' }}>
+            {/* Header Area */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3rem' }}>
+                <div>
+                    <button onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 0, marginBottom: '0.75rem', fontWeight: 700, fontSize: '0.85rem' }}>
+                        <ArrowLeft size={16} /> Back to Home
+                    </button>
+                    <h1 style={{ fontSize: '2.5rem', fontWeight: 900, letterSpacing: '-0.04em' }}>Track Reports</h1>
+                    <p style={{ color: 'var(--muted)', marginTop: '0.25rem' }}>Keep an eye on everything you've reported.</p>
+                </div>
+                <div style={{ width: 64, height: 64, borderRadius: 20, background: 'rgba(52, 211, 153, 0.1)', border: '1px solid rgba(52, 211, 153, 0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
+                    <Archive size={32} />
+                </div>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
+            {/* Reports List */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                 {reports.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--color-text-muted)' }}>
-                        <Archive size={48} style={{ opacity: 0.2, margin: '0 auto 1rem' }} />
-                        <p>You haven't submitted any reports yet.</p>
+                    <div className="glass-panel" style={{ textAlign: 'center', padding: '5rem 2rem', borderRadius: 32 }}>
+                        <Archive size={64} style={{ opacity: 0.1, margin: '0 auto 1.5rem' }} />
+                        <h3 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '0.5rem' }}>No Reports Yet</h3>
+                        <p style={{ color: 'var(--muted)', fontSize: '0.95rem' }}>Start reporting civic problems to see them listed here.</p>
+                        <button className="btn btn-primary" onClick={onClose} style={{ marginTop: '2rem', padding: '0.9rem 2rem' }}>Report My First Issue</button>
                     </div>
                 ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        {reports.map((report) => (
-                            <div key={report.ticketId} style={{ background: 'rgba(255,255,255,0.8)', padding: '1.25rem', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)', boxShadow: 'var(--shadow-sm)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                                    <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--color-primary)', background: 'var(--color-bg)', padding: '2px 8px', borderRadius: '4px' }}>
-                                        {report.ticketId}
-                                    </span>
-                                    <span style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--color-success)', fontWeight: '600' }}>
-                                        <Clock size={12} /> {report.status}
-                                    </span>
+                    reports.map((report) => (
+                        <div key={report.ticketId} className="flashcard" style={{
+                            background: 'rgba(255,255,255,0.03)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: 24,
+                            cursor: 'default', transition: 'all 0.3s',
+                            overflow: 'hidden',
+                            display: 'flex',
+                            flexDirection: 'row'
+                        }}>
+                            {/* Media Column */}
+                            {report.capturePreview && (
+                                <div style={{ width: 180, minWidth: 180, background: 'rgba(0,0,0,0.2)', position: 'relative', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
+                                    {report.captureType === 'image' ? (
+                                        <img src={report.capturePreview} alt="Evidence" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    ) : report.captureType === 'video' ? (
+                                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
+                                            <div style={{ position: 'absolute', inset: 0, opacity: 0.5 }}>
+                                                <video src={report.capturePreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            </div>
+                                            <Clock size={24} color="white" style={{ position: 'relative' }} />
+                                        </div>
+                                    ) : (
+                                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.03)' }}>
+                                            <FileText size={24} color="var(--primary)" />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Content Column */}
+                            <div style={{ padding: '1.75rem', flex: 1 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                        <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>
+                                            <FileText size={18} />
+                                        </div>
+                                        <div>
+                                            <h4 style={{ fontWeight: 800, fontSize: '1.05rem', marginBottom: 2 }}>{report.ticketId}</h4>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--muted)', fontSize: '0.8rem' }}>
+                                                <MapPin size={12} /> {report.jurisdiction?.ward_district || report.jurisdiction || 'Location Saved'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style={{
+                                        background: report.status?.toLowerCase() === 'submitted'
+                                            ? 'rgba(52, 211, 153, 0.1)'
+                                            : report.status?.toLowerCase() === 'draft'
+                                                ? 'rgba(245, 158, 11, 0.1)'
+                                                : 'rgba(239, 68, 68, 0.1)',
+                                        padding: '6px 12px', borderRadius: 10,
+                                        color: report.status?.toLowerCase() === 'submitted'
+                                            ? '#10b981'
+                                            : report.status?.toLowerCase() === 'draft'
+                                                ? '#f59e0b'
+                                                : '#ef4444',
+                                        fontSize: '0.7rem', fontWeight: 800, letterSpacing: 0.5,
+                                        border: `1px solid ${report.status?.toLowerCase() === 'submitted'
+                                            ? 'rgba(52, 211, 153, 0.2)'
+                                            : report.status?.toLowerCase() === 'draft'
+                                                ? 'rgba(245, 158, 11, 0.2)'
+                                                : 'rgba(239, 68, 68, 0.2)'}`
+                                    }}>
+                                        {report.status?.toUpperCase() || 'PROCESSING'}
+                                    </div>
                                 </div>
 
-                                <h4 style={{ fontWeight: '600', fontSize: '1rem', marginBottom: '0.25rem' }}>{report.jurisdiction?.portal_name || 'Government Portal'}</h4>
+                                <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', marginBottom: '1.25rem' }} />
 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--color-text-muted)', fontSize: '0.8rem', marginBottom: '0.75rem' }}>
-                                    <MapPin size={12} /> {report.jurisdiction?.ward_district || 'Location unavailable'}
-                                </div>
-
-                                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                                    Submitted on {new Date(report.timestamp).toLocaleDateString()} at {new Date(report.timestamp).toLocaleTimeString()}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--muted)', opacity: 0.6 }}>
+                                        {report.department || 'Road & Pothole Dept.'}
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--primary)', fontWeight: 800, fontSize: '0.8rem' }}>
+                                        {report.damageType || 'Civic Issue'} <ChevronRight size={14} />
+                                    </div>
                                 </div>
                             </div>
-                        ))}
-                    </div>
+                        </div>
+                    ))
                 )}
             </div>
         </div>

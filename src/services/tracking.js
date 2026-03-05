@@ -1,20 +1,52 @@
 import { openDB } from 'idb';
+import { initDB } from '../utils/db';
 
 /**
  * Mock AWS Services for Post-Submission Tracking
  */
 
-export const saveReportToDynamoDB = async (ticketId, draft, captureId) => {
-    console.log(`[Amazon DynamoDB] Saving report metadata for ticket: ${ticketId}`);
+export const saveReportDraft = async (draft, capture) => {
+    console.log(`[Amazon DynamoDB] Autosaving draft for capture: ${capture.id}`);
     try {
         const payload = {
+            id: capture.id, // Use capture.id as primary key
+            timestamp: Date.now(),
+            jurisdiction: draft.jurisdiction || capture.jurisdiction?.ward_district || 'Local Authority',
+            damageType: draft.damageType || 'Pothole / Road Damage', // Default to Pothole as requested
+            severity: draft.severity || 'Medium',
+            status: 'DRAFT',
+            captureId: capture.id,
+            capturePreview: capture.previewUrl || draft.capturePreview,
+            captureType: capture.type || draft.captureType || 'image',
+            description: draft.description || '',
+            department: 'Road Maintenance & Pothole Repair' // Explicitly set department
+        };
+
+        const db = await initDB();
+        if (db.objectStoreNames.contains('reports')) {
+            await db.put('reports', payload);
+        }
+    } catch (error) {
+        console.error("Failed to save draft to local history", error);
+    }
+};
+
+export const saveReportToDynamoDB = async (ticketId, draft, captureId) => {
+    console.log(`[Amazon DynamoDB] Finalizing report for ticket: ${ticketId}`);
+    try {
+        const payload = {
+            id: captureId, // Maintain same ID to update draft to submitted
             ticketId,
             timestamp: Date.now(),
             jurisdiction: draft.jurisdiction,
-            damageType: draft.damageType,
+            damageType: draft.damageType || 'Pothole / Road Damage',
             severity: draft.severity,
             status: 'SUBMITTED',
-            captureId
+            captureId,
+            capturePreview: draft.capturePreview || null,
+            captureType: draft.captureType || 'image',
+            description: draft.description,
+            department: 'Road Maintenance & Pothole Repair'
         };
         const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
         const res = await fetch(`${BACKEND_URL}/api/reports/save`, {
@@ -24,10 +56,10 @@ export const saveReportToDynamoDB = async (ticketId, draft, captureId) => {
         });
         if (!res.ok) throw new Error("DynamoDB save failed");
 
-        // Also save to IndexedDB for offline tracking
-        const db = await openDB('SewaSahayakDB', 1);
+        // Update record in IndexedDB
+        const db = await initDB();
         if (db.objectStoreNames.contains('reports')) {
-            await db.add('reports', payload);
+            await db.put('reports', payload);
         }
     } catch (error) {
         console.error("Failed to save report to backend", error);

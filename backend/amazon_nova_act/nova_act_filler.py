@@ -71,23 +71,23 @@ def _nova_act_master_flow(portal_url: str, portal_name: str, draft: dict, sessio
         ignore_https_errors=True,
     ) as nova:
         
-        # --- PHASE 1: Visual Recon & Semantic Audit ---
-        _step(session, "recon", f"Agent performing visual audit of {portal_name}...")
+        # --- PHASE 1: Visual Recon & NLP Chunked Semantic Audit (Potholes Only) ---
+        _step(session, "recon", f"Agent performing NLP-chunked semantic audit of {portal_name} specifically for Road/Pothole damage...")
         
         class _VisualAudit(BaseModel):
             language: str = Field(description="Detected language of the portal text")
             page_type: str = Field(description="One of: 'login', 'form', 'landing', 'maintenance'")
-            navigation_hint: str = Field(description="Element label to click to reach the registration form")
+            navigation_hint: str = Field(description="Element label to click to reach the registration form for Road/Public Grievance")
             required_credentials: List[str] = Field(description="Labels for login fields if needed", default=[])
 
         audit = nova.act_get(
-            "Quickly scan the page. Detect the language. Identify if this is a login screen or a registration form. "
-            "If it's a landing page, find the fastest route to 'Lodge/Register Complaint'.",
+            "Quickly scan the page by NLP chunking the DOM. Detect the language. STRICT REQUIREMENT: Only navigate paths related to Potholes, Roads, or Civic Grievance forms. Do not follow irrelevant links. "
+            "Identify if this is a login screen or a registration form. If a landing page, find the fastest route to 'Lodge/Register Pothole Complaint'.",
             schema=_VisualAudit.model_json_schema()
         )
         
         lang = audit.parsed_response.get("language", "English") if audit.parsed_response else "English"
-        _step(session, "recon", f"Recon complete. Language: {lang}. Optimizing for direct form access.")
+        _step(session, "recon", f"NLP Chunk Analysis complete. Language: {lang}. Targeting Pothole/Civic forms exclusively.")
 
         # --- PHASE 2: Authentication (HITL Fallback) ---
         if audit.parsed_response and audit.parsed_response.get("page_type") == "login":
@@ -108,8 +108,8 @@ def _nova_act_master_flow(portal_url: str, portal_name: str, draft: dict, sessio
         # --- PHASE 3: Navigation & Form Analysis ---
         if not (audit.parsed_response and audit.parsed_response.get("page_type") == "form"):
             target = audit.parsed_response.get("navigation_hint", "Register Grievance")
-            _step(session, "nav", f"Navigating to grievance form marked as '{target}' ({lang})...")
-            nova.act(f"Locate and click '{target}' in {lang}. Navigate directly to the complaint form.")
+            _step(session, "nav", f"Using NLP chunk analysis to route to form marked as '{target}' ({lang})...")
+            nova.act(f"Locate and click '{target}' in {lang}. Navigate directly to the Public Grievance / Pothole form. Ignore irrelevant links entirely.")
 
         # --- PHASE 4: Gap Analysis (Proactive HITL) ---
         _step(session, "analysis", "Analyzing form requirements against provided citizen draft...")
@@ -148,7 +148,7 @@ def _nova_act_master_flow(portal_url: str, portal_name: str, draft: dict, sessio
         for k, v in draft.items():
             if k not in ['applicantName', 'phoneNumber', 'description']:
                 fill_instructions += f"- {k}: {v}\n"
-        fill_instructions += f"Autonomously select correct options for address/department dropdowns based on context. Resolve {lang} labels."
+        fill_instructions += f"Autonomously select correct options for address/department dropdowns based on NLP context (strictly select 'Roads', 'Public Works', or 'Pothole' categories). Resolve {lang} labels."
 
         nova.act(fill_instructions)
 

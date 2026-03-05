@@ -6,7 +6,14 @@ from fastapi.requests import Request
 from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel
 from core.config import Config
-from api.router import auth, evidence, reports, ai, agentic
+from api.router import auth, evidence, reports, ai, agentic, chatbot
+from services.aws.amazon_transcribe import (
+    upload_audio_to_s3, 
+    start_transcription_job, 
+    poll_transcription_job, 
+    extract_transcript
+)
+from pydantic import BaseModel as PydanticBase
 import os
 import uuid
 import time
@@ -22,7 +29,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(SessionMiddleware, secret_key=Config.SECRET_KEY)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=Config.SECRET_KEY,
+    same_site="lax",
+    max_age=86400 * 7,   # 7-day sessions
+)
 
 # Routers
 app.include_router(auth.router)
@@ -30,10 +42,71 @@ app.include_router(evidence.router)
 app.include_router(reports.router)
 app.include_router(ai.router)
 app.include_router(agentic.router)
+app.include_router(chatbot.router)
 
 @app.get("/api/health")
 def health():
     return {"status": "running", "version": "2.0.0-modular"}
+
+# ── User state (chat session persistence per user session) ───────────────────
+
+@app.get("/api/user/state")
+async def get_user_state(request: Request):
+    user = request.session.get("user")
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+        
+    uuid_sub = user.get('sub')
+    if users_table and uuid_sub:
+        try:
+            db_response = users_table.get_item(Key={'userId': uuid_sub})
+            item = db_response.get('Item', {})
+            return {
+                "chat_sessions": item.get("chat_sessions", request.session.get("chat_sessions", [])),
+                "activeChatId": item.get("active_chat_id", request.session.get("active_chat_id", None))
+            }
+        except Exception as e:
+            print(f"DynamoDB get state error: {e}")
+
+    return {
+        "chat_sessions": request.session.get("chat_sessions", []),
+        "activeChatId":  request.session.get("active_chat_id", None),
+    }
+
+class ChatStateBody(PydanticBase):
+    sessions: list = []
+    activeChatId: str = ""
+
+@app.post("/api/user/state/chats")
+async def save_user_chats(body: ChatStateBody, request: Request):
+    user = request.session.get("user")
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+        
+    # Trim each session 
+    trimmed = []
+    for s in body.sessions:
+        trimmed.append({**s, "messages": s.get("messages", [])[-30:]})
+        
+    # Try saving to DB first
+    uuid_sub = user.get('sub')
+    if users_table and uuid_sub:
+        try:
+            users_table.update_item(
+                Key={'userId': uuid_sub},
+                UpdateExpression="SET chat_sessions = :cs, active_chat_id = :acid",
+                ExpressionAttributeValues={
+                    ':cs': trimmed,
+                    ':acid': body.activeChatId
+                }
+            )
+        except Exception as e:
+            print(f"DynamoDB save state error: {e}")
+            
+    # And keep in session as backup (though might get dropped if too big)
+    request.session["chat_sessions"]  = trimmed
+    request.session["active_chat_id"] = body.activeChatId
+    return {"saved": True}
 
 # SPA Support (Serve Vite build)
 DIST_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dist")
