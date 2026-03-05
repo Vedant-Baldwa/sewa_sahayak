@@ -1,185 +1,168 @@
 # Sewa Sahayak
 
-Sewa Sahayak is a civic-tech solution that leverages Amazon Bedrock's multi-modal AI capabilities to automate road damage reporting to Indian government portals. The system addresses the "Reporting Wall" problem by acting as an intelligent intermediary that processes citizen-submitted evidence (video/voice) and automatically fills government forms using agentic web automation.
+Sewa Sahayak (सेवा सहायक) is a cutting-edge civic-tech platform that leverages **Amazon Bedrock's multi-modal AI** and **Amazon Nova Act's browser automation** to bridge the "Reporting Wall" between Indian citizens and government portals.
 
-By reducing reporting time from 15+ minutes to under 3 minutes, the system aims to increase civic participation in infrastructure maintenance.
+By transforming unstructured citizen evidence (voice, video, and photos) into structured, data-rich official reports, the platform reduces the reporting time from 15+ minutes to under 3 minutes, significantly increasing civic participation in urban infrastructure maintenance.
 
 ---
 
-## Getting Started
+## 🌟 Key Features
+
+- **Multi-Modal Evidence Capture**: Seamlessly upload audio descriptions (in regional languages), videos of road damage, and high-resolution photos.
+- **Sahayak AI Chatbot**: An intelligent, multi-lingual assistant (powered by Nova Pro) that helps users navigate the platform and understand civic reporting in 10+ Indian languages.
+- **Intelligent Language Detection**: Automatic language switching based on GPS coordinates and browser locale, with support for regional dialects.
+- **Agentic Form Filling**: Uses **Amazon Nova Act** to automatically navigate complex government portals (like CPGRAMS, NHAI, or MCD), handling data entry and interactive CAPTCHA challenges.
+- **Enhanced Report History**: A robust dashboard to track past submissions, featuring media previews and structured status updates.
+- **Privacy First**: Integrated PII redaction using **Amazon Rekognition** to blur faces and license plates before any data is stored or submitted.
+
+---
+
+## 🛠️ Technology Stack
+
+### Frontend
+- **React 19** with **Vite** for a high-performance, responsive UI.
+- **Progressive Web App (PWA)** support for offline-first capabilities and mobile-app-like experience.
+- **Lucide React** for modern, accessible iconography.
+
+### Backend
+- **FastAPI (Python)** for a modular, high-performance API layer.
+- **Boto3** for deep integration with AWS ecosystem.
+- **Uvicorn** as the lightning-fast ASGI server.
+
+### AI & AWS Services
+- **Amazon Bedrock (Nova Pro)**: Multi-modal analysis and conversational AI.
+- **Amazon Nova Act**: Intelligent browser automation for portal interaction.
+- **Amazon Rekognition**: Computer vision for damage analysis and privacy redaction.
+- **Amazon Transcribe**: High-accuracy transcription for Indic languages.
+- **Amazon S3**: Secure object storage for evidence vaulting.
+- **Amazon DynamoDB**: Scalable NoSQL database for session and report persistence.
+- **AWS Cognito**: Secure OAuth 2.0 based user authentication.
+
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
 
-- Node.js 18+
-- AWS CLI configured with appropriate permissions
-- Access to Amazon Bedrock, Nova Act, Rekognition, and Transcribe in `ap-south-1`
+- **Node.js 18+** & **npm**
+- **Python 3.10+**
+- **AWS CLI** configured with appropriate permissions in `ap-south-1` (Mumbai).
+- Access to **Amazon Bedrock** (Nova Pro), **Nova Act**, and **Rekognition** in your AWS account.
 
-### Installation
-
+### 1. Clone the Repository
 ```bash
 git clone https://github.com/Vedant-Baldwa/sewa_sahayak.git
 cd sewa_sahayak
+```
+
+### 2. Frontend Setup
+```bash
+# Install dependencies
 npm install
-```
 
-### Environment Variables
-
-```bash
+# Setup environment variables
 cp .env.example .env
-```
 
-| Variable | Description |
-|----------|-------------|
-| `AWS_REGION` | Target AWS region (default: `ap-south-1`) |
-| `BEDROCK_MODEL_ID` | Bedrock model ARN for Nova Pro |
-| `COGNITO_USER_POOL_ID` | Cognito user pool ID |
-| `S3_EVIDENCE_BUCKET` | S3 bucket for evidence storage |
-| `DYNAMODB_TABLE` | DynamoDB table for session state |
-
-### Running Locally
-
-```bash
+# Run development server
 npm run dev
 ```
+The frontend will be available at `http://localhost:5173`.
 
-Starts the development server at `http://localhost:3000`. Ensure all AWS sandbox credentials in `.env` are populated before starting backend services.
+### 3. Backend Setup
+```bash
+cd backend
+# Create and activate virtual environment (optional but recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Setup backend environment variables
+cp .env.example .env
+
+# Run the API server
+python -m uvicorn main:app --reload --port 8000
+```
+The API documentation (Swagger) will be available at `http://localhost:8000/docs`.
 
 ---
 
-## Architecture & Technology Stack
-
-The system combines **Amazon Bedrock LLMs** for multi-modal analysis with **Amazon Nova Act** for browser automation, creating a seamless bridge between citizens and government reporting systems.
-
-It follows a microservices architecture leveraging AWS:
-
-- **Frontend**: Mobile Web App / Progressive Web App (PWA)
-- **API & Auth**: Amazon API Gateway, AWS Cognito
-- **Core Processing**: AWS Step Functions, AWS Lambda Functions
-- **AI/ML Services**: Amazon Bedrock (Nova Pro), Amazon Rekognition, Amazon Transcribe (Indic)
-- **Web Automation**: Amazon Nova Act & Browser Automation Engine
-- **Storage**: Amazon S3, Amazon DynamoDB, AWS Secrets Manager
+## 🏗️ Project Architecture
 
 ```mermaid
 graph TB
-    subgraph "Client"
-        UI[Mobile Web App / PWA]
+    subgraph "Client (PWA)"
+        UI[React / Vite App]
+        STORAGE[IndexedDB / LocalStorage]
     end
 
-    subgraph "API Layer"
-        AG[Amazon API Gateway]
-        AUTH[AWS Cognito]
+    subgraph "Backend (FastAPI)"
+        API[API Router]
+        CORE[Business Logic]
+        SVC[AWS Integration Services]
     end
 
-    subgraph "Core Processing"
-        ORCH[AWS Step Functions]
-        LAMBDA[AWS Lambda]
-    end
-
-    subgraph "AI/ML"
+    subgraph "AI & ML (AWS)"
         BEDROCK[Amazon Bedrock · Nova Pro]
         REKOGNITION[Amazon Rekognition]
-        TRANSCRIBE[Amazon Transcribe · Indic]
+        TRANSCRIBE[Amazon Transcribe]
     end
 
     subgraph "Web Automation"
         NOVA[Amazon Nova Act]
-        BROWSER[Browser Engine]
+        BROWSER[Headless Browser Engine]
     end
 
-    subgraph "Storage"
-        S3[Amazon S3]
-        DYNAMO[Amazon DynamoDB]
-        SECRETS[AWS Secrets Manager]
+    subgraph "Data & Auth"
+        S3[S3 Evidence Vault]
+        DYNAMO[DynamoDB State]
+        AUTH[AWS Cognito]
     end
 
-    UI --> AG --> AUTH
-    AG --> ORCH --> LAMBDA
-    LAMBDA --> BEDROCK & REKOGNITION & TRANSCRIBE
-    LAMBDA --> NOVA --> BROWSER
-    LAMBDA --> S3 & DYNAMO & SECRETS
+    UI <--> API
+    API <--> CORE <--> SVC
+    SVC <--> BEDROCK & REKOGNITION & TRANSCRIBE
+    SVC <--> S3 & DYNAMO & AUTH
+    CORE <--> NOVA <--> BROWSER
 ```
 
 ---
 
-## Key Components
-
-1. **Evidence Capture Module**: Processes video, voice, and location data from user submissions, extracting GPS coordinates and converting formats. Features support for offline storage and synchronization logic.
-
-2. **Bedrock Analysis Agent**: Responsible for vision analysis to gauge infrastructure damage (e.g., potholes, cracks), voice transcription spanning regional Indian languages, and comprehensive severity assessments.
-
-3. **Portal Router**: Determines the appropriate government jurisdiction (municipal, state, or central) and selects the relevant portal based on location and historical effectiveness tracking.
-
-4. **Web Bridge Agent**: Uses visual form field detection to interact with government websites and automate data entry, while handling session management and CAPTCHA detection.
-
-5. **Privacy Engine**: Applies PII redaction rules utilizing Amazon Rekognition to anonymize human faces, license plates, and sensitive audio before storage or submission.
-
-6. **Human Loop Interface**: Ensures reporting safety by providing users an opportunity to verify generated official reports prior to automated submission — specifically on 90%+ completion or CAPTCHA encounters.
-
----
-
-## Data Flow Pipeline
-
-1. **Submission**: User uploads photos/videos/audio via the lightweight PWA.
-2. **Analysis**: AI identifies the exact damage type and severity, transcribes regional dialects, and establishes location context.
-3. **Privacy Scrubbing**: Videos and photos are scanned for faces/license plates and instantly blurred.
-4. **Drafting**: The Web Bridge generates a detailed official report combining AI descriptions, metadata, and GPS markers.
-5. **Automation**: Nova Act assumes control of a headless browser to map the generated draft payloads into corresponding municipal reporting endpoints.
-
----
-
-## Project Structure
+## 📂 Project Structure
 
 ```
 sewa_sahayak/
-├── src/
-│   ├── capture/          # Evidence ingestion and preprocessing
-│   ├── analysis/         # Bedrock and Rekognition integration
-│   ├── routing/          # Jurisdiction and portal selection logic
-│   ├── automation/       # Nova Act browser automation
-│   ├── privacy/          # PII redaction pipeline
-│   └── human-loop/       # CAPTCHA handoff and draft review
-├── infra/                # AWS CDK / SAM deployment configs
-├── tests/
-│   ├── unit/
-│   └── property/         # fast-check property-based tests
-└── .env.example
+├── backend/            # FastAPI Python server
+│   ├── api/            # API routes (Auth, Reports, AI, Agentic)
+│   ├── core/           # Configuration and shared utilities
+│   ├── services/       # AWS client wrappers and business logic
+│   └── main.py         # Application entry point
+├── src/                # Frontend React code
+│   ├── components/     # Reusable UI elements
+│   ├── pages/          # Full page views (Report, History, etc.)
+│   ├── hooks/          # Custom React hooks for API interaction
+│   └── store/          # State management logic
+├── public/             # Static assets
+└── .env.example        # Environment variable template
 ```
 
 ---
 
-## Testing
+## 🧪 Testing
 
 ```bash
-# Unit tests
+# Frontend Tests
 npm test
 
-# Property-based tests (fast-check, 100 iterations per property)
-npm run test:property
-
-# Integration tests
-npm run test:integration
+# Backend Tests
+cd backend
+python run_tests.py
 ```
 
-The platform's correctness is enforced through property-based testing via **fast-check** and Jest, covering:
-
-- Jurisdiction accuracy across municipal, state, and central tiers
-- Fail-safe error recovery for form validation blocks and session timeouts
-- Regional language transcription across Hindi, Tamil, Telugu, Bengali, Marathi, Gujarati, Kannada, Malayalam, Punjabi, and Odia
-
 ---
 
-## Contributing
+## 📜 License
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/your-feature`)
-3. Commit your changes (`git commit -m 'feat: your feature'`)
-4. Push to the branch (`git push origin feature/your-feature`)
-5. Open a Pull Request
+This project is licensed under the **Apache 2.0 License**. See the [LICENSE](LICENSE) file for details.
 
-Please ensure all property tests pass before submitting a PR.
-
----
-
-## License
-
-This project is licensed under the [Apache 2.0](LICENSE)
