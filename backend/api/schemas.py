@@ -48,3 +48,17 @@ class ReportCreate(BaseModel):
     lat: Optional[str] = None
     lng: Optional[str] = None
 
+class DraftCreate(BaseModel):
+    id: str
+    timestamp: int
+    jurisdiction: Optional[str] = None
+    damageType: Optional[str] = None
+    severity: Optional[str] = None
+    status: str = "DRAFT"
+    captureId: Optional[str] = None
+    capturePreview: Optional[str] = None
+    captureType: Optional[str] = None
+    description: Optional[str] = None
+    department: Optional[str] = None
+
+

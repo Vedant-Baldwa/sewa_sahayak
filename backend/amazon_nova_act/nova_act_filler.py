@@ -12,8 +12,13 @@ try:
     os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
     os.environ["AWS_REGION"] = "us-east-1"
 except ImportError:
-    print("Nova Act SDK not installed.")
-    exit(1)
+    print("Nova Act SDK not installed. Agentic scraping will be mocked.")
+    NovaAct = None
+    # Dummy decorator fallback
+    def workflow(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 _sessions: Dict[str, dict] = {}
 
@@ -199,7 +204,7 @@ def _nova_act_master_flow(portal_url: str, portal_name: str, draft: dict, sessio
         
         ack_id = receipt.parsed_response.get("id", "") if receipt.parsed_response else ""
         if not ack_id:
-            ack_id = f"SAHAYAK-{uuid.uuid4().hex[:8].upper()}"
+            ack_id = f"SAHAYAK-{str(uuid.uuid4())[:8].upper()}"
 
         session["status"] = "done"
         session["ticket_id"] = ack_id

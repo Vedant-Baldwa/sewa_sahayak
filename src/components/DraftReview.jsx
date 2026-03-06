@@ -13,6 +13,14 @@ export default function DraftReview({ capture, onClose, onSubmit }) {
 
     useEffect(() => {
         async function fetchRouteAndDraft() {
+            // IF it is already a draft from backend, we skip Bedrock synthesis
+            if (capture.backendDraft) {
+                setDraft(capture.backendDraft);
+                setFormSchema(capture.backendDraft.form_schema || {});
+                setIsGenerating(false);
+                return;
+            }
+
             try {
                 setStatusMsg('Analyzing location for jurisdiction mapping…');
                 const locationData = capture.locationData || {};

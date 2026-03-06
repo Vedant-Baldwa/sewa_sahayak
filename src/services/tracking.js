@@ -22,12 +22,42 @@ export const saveReportDraft = async (draft, capture) => {
             department: 'Road Maintenance & Pothole Repair' // Explicitly set department
         };
 
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+        const res = await fetch(`${BACKEND_URL}/api/reports/drafts`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify(payload)
+        });
+        
+        if (!res.ok) throw new Error("Backend draft save failed");
+
+        // We can still maintain a local copy if we want, but the source of truth is backend
         const db = await initDB();
         if (db.objectStoreNames.contains('reports')) {
             await db.put('reports', payload);
         }
     } catch (error) {
-        console.error("Failed to save draft to local history", error);
+        console.error("Failed to save draft to backend history", error);
+    }
+};
+
+export const fetchReportDrafts = async () => {
+    console.log(`[Amazon DynamoDB] Fetching active drafts from backend`);
+    try {
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+        const res = await fetch(`${BACKEND_URL}/api/reports/drafts`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include"
+        });
+        
+        if (!res.ok) throw new Error("Failed to fetch drafts");
+        const data = await res.json();
+        return data.drafts || [];
+    } catch (error) {
+        console.error("Failed to fetch drafts from backend", error);
+        return [];
     }
 };
 

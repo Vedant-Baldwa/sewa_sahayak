@@ -35,15 +35,49 @@ async def redact_media(media: UploadFile = File(...)):
     )
 
 @router.post("/transcribe")
-async def transcribe_audio(audio: UploadFile = File(...)):
-    temp_path = f"temp_{uuid.uuid4()}.webm"
-    with open(temp_path, "wb") as f: f.write(await audio.read())
+async def transcribe_audio(audio: UploadFile = File(...), language: str = Form("hi-IN")):
+    print(f"[AWS Transcribe API] Received audio: {audio.filename}, hint: {language}")
+    # Extract extension for AWS format
+    ext = audio.filename.split('.')[-1].lower() if '.' in audio.filename else 'webm'
+    format_mapping = {'webm': 'webm', 'mp3': 'mp3', 'm4a': 'm4a', 'mp4': 'mp4', 'wav': 'wav', 'ogg': 'ogg'}
+    audio_format = format_mapping.get(ext, 'webm')
+
+    # Save temp file
+    temp_path = f"temp_{uuid.uuid4()}_{audio.filename}"
+    with open(temp_path, "wb") as f: 
+        f.write(await audio.read())
     
-    s3_uri = upload_audio_to_s3(temp_path, Config.S3_BUCKET_NAME, f"audio/{temp_path}")
-    job_name = f"trans_{uuid.uuid4().hex[:8]}"
-    start_transcription_job(job_name, s3_uri)
-    result = poll_transcription_job(job_name)
-    transcript = extract_transcript(result)
-    
-    os.remove(temp_path)
-    return {"transcript": transcript, "extractedData": {"damage_type": "civic issue"}}
+    try:
+        # S3 Upload
+        if not Config.S3_BUCKET_NAME:
+            raise HTTPException(status_code=500, detail="S3 Bucket not configured")
+            
+        s3_key = f"audio/{temp_path}"
+        s3_uri = upload_audio_to_s3(temp_path, Config.S3_BUCKET_NAME, s3_key)
+        
+        if not s3_uri:
+            raise HTTPException(status_code=500, detail="S3 Direct Upload Failed")
+
+        # Transcribe Start
+        job_name = f"trans_{uuid.uuid4().hex}"
+        job_started = start_transcription_job(job_name, s3_uri, audio_format)
+        if not job_started:
+            raise HTTPException(status_code=500, detail="Transcription job initiation failed")
+
+        # Wait & Poll
+        print(f"Polling job {job_name} ({audio_format})...")
+        result = poll_transcription_job(job_name)
+        
+        if result.get("TranscriptionJobStatus") != "COMPLETED":
+            raise HTTPException(status_code=500, detail=f"Job failed with status: {result.get('TranscriptionJobStatus')}")
+
+        transcript = extract_transcript(result)
+        
+        return {
+            "transcript": transcript, 
+            "extractedData": {"damage_type": "civic issue"},
+            "job_name": job_name
+        }
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)

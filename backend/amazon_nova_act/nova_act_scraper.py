@@ -14,8 +14,13 @@ try:
     os.environ["AWS_REGION"] = "us-east-1"
     from aws_services.check_portal_health import check_portal_health
 except ImportError:
-    print("Nova Act SDK or required module is not installed.")
-    exit(1)
+    print("Nova Act SDK or required module is not installed. Agentic scraping will be mocked.")
+    NovaAct = None
+    # Dummy decorator fallback
+    def workflow(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 
 # ---------------------------------------------------------------------------

@@ -24,7 +24,7 @@ import LandingFooter from './components/landing/LandingFooter';
 import MyReports from './components/MyReports';
 import UserProfileForm from './components/UserProfileForm';
 import LanguageSelector from './components/LanguageSelector';
-import { uploadEvidenceToS3, saveReportToDynamoDB, sendPushNotification } from './services/tracking';
+import { uploadEvidenceToS3, saveReportToDynamoDB, sendPushNotification, fetchReportDrafts } from './services/tracking';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
@@ -102,6 +102,29 @@ function App() {
         if (res.ok) {
           const data = await res.json();
           setUser({ ...data.user, userData: data.userData, token: data.token });
+
+          // Load drafts from backend
+          try {
+            const drafts = await fetchReportDrafts();
+            if (drafts && drafts.length > 0) {
+              const formattedDrafts = drafts.map(d => ({
+                id: d.id || d.captureId,
+                type: d.captureType || 'image',
+                timestamp: d.timestamp,
+                previewUrl: d.capturePreview,
+                jurisdiction: { ward_district: d.jurisdiction, portal_name: d.portal_name, portal_url: d.portal_url },
+                damageType: d.damageType,
+                severity: d.severity,
+                description: d.description,
+                backendDraft: d, // store the full draft response here to skip generation
+                synced: true
+              }));
+              // update captures with these loaded drafts
+              setCaptures(prev => [...formattedDrafts, ...prev]);
+            }
+          } catch (err) {
+            console.error('Failed to load drafts', err);
+          }
         }
       } catch (err) {
         console.warn('No active session.');
