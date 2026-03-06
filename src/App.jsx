@@ -13,7 +13,9 @@ import AgenticSubmission from './components/AgenticSubmission';
 import Auth from './components/Auth';
 import { uploadEvidenceToS3, saveReportToDynamoDB, sendPushNotification } from './services/tracking';
 import MyReports from './components/MyReports';
-import { Shield, MapPin, FileText, UserCircle } from 'lucide-react';
+import { Shield, MapPin, FileText, UserCircle, LogOut } from 'lucide-react';
+import DashcamRecorder from './components/DashcamRecorder';
+import Dashboard from './components/Dashboard';
 
 function App() {
   const isOnline = useOnlineStatus();
@@ -27,6 +29,7 @@ function App() {
   const [activeSubmissionDraft, setActiveSubmissionDraft] = useState(null);
   const [user, setUser] = useState(null);
   const [showReports, setShowReports] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
   const photoInputRef = useRef(null);
   const videoInputRef = useRef(null);
 
@@ -214,6 +217,16 @@ function App() {
     setActiveSubmissionDraft(null);
   };
 
+  const handleLogout = async () => {
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+    try {
+      await fetch(`${BACKEND_URL}/api/auth/logout`, { method: "POST", credentials: "include" });
+      setUser(null);
+    } catch (err) {
+      console.error("Logout failed", err);
+    }
+  };
+
   if (!user) {
     return <Auth onLogin={setUser} />;
   }
@@ -223,6 +236,20 @@ function App() {
       <main className="app-main" style={{ height: '100vh', padding: 0 }}>
         <MyReports onClose={() => setShowReports(false)} />
       </main>
+    );
+  }
+
+  if (showDashboard) {
+    return (
+      <>
+        <header className="app-header">
+          <h1 className="heading-2 text-gradient" style={{ fontSize: '1.5rem', margin: 0 }}>Damage Map</h1>
+          <button className="btn btn-secondary" style={{ padding: '6px 12px', borderRadius: '8px' }} onClick={() => setShowDashboard(false)}>Back</button>
+        </header>
+        <main className="app-main" style={{ height: 'calc(100vh - 80px)', padding: 0 }}>
+          <Dashboard />
+        </main>
+      </>
     );
   }
 
@@ -265,14 +292,31 @@ function App() {
     <>
       <header className="app-header">
         <h1 className="heading-2 text-gradient" style={{ fontSize: '1.5rem', margin: 0 }}>Sewa Sahayak</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <OnlineIndicator />
           <button
             className="btn btn-secondary"
             style={{ padding: '4px 8px', borderRadius: '8px', fontSize: '0.8rem', minWidth: '40px', border: '1px solid rgba(0,0,0,0.1)' }}
+            onClick={() => setShowDashboard(true)}
+            title="Intelligence Dashboard"
+          >
+            <MapPin size={18} />
+          </button>
+          <button
+            className="btn btn-secondary"
+            style={{ padding: '4px 8px', borderRadius: '8px', fontSize: '0.8rem', minWidth: '40px', border: '1px solid rgba(0,0,0,0.1)' }}
             onClick={() => setShowReports(true)}
+            title="My Reports"
           >
             <UserCircle size={18} />
+          </button>
+          <button
+            className="btn btn-danger"
+            style={{ padding: '4px 8px', borderRadius: '8px', fontSize: '0.8rem', minWidth: '40px', border: '1px solid rgba(0,0,0,0.1)', background: 'var(--color-danger)', color: 'white' }}
+            onClick={handleLogout}
+            title="Log out"
+          >
+            <LogOut size={18} />
           </button>
         </div>
       </header>
@@ -309,9 +353,10 @@ function App() {
             </button>
             <button className="btn btn-secondary" onClick={() => videoInputRef.current.click()}>
               <Video size={20} />
-              Record Video
+              Record Video (Manual)
             </button>
             <AudioRecorder onRecordingComplete={onAudioRecorded} />
+            <DashcamRecorder />
             {isTranscribing && (
               <div style={{ background: 'var(--color-bg)', padding: '1rem', borderRadius: '12px', textAlign: 'center', color: 'var(--color-primary)' }}>
                 <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 0.5rem' }} />

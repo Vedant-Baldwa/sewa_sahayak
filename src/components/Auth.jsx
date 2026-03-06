@@ -18,10 +18,20 @@ export default function Auth() {
                 Please log in to submit or view civic issues in your area.
             </p>
 
-            <button onClick={handleLogin} className="btn btn-primary" style={{ width: '100%' }}>
-                <LogIn size={20} />
-                Login with Sewa Sahayak
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <button onClick={handleLogin} className="btn btn-primary" style={{ width: '100%' }}>
+                    <LogIn size={20} />
+                    Login with Sewa Sahayak
+                </button>
+                <button
+                    onClick={() => { window.location.href = `${BACKEND_URL}/login/google`; }}
+                    className="btn"
+                    style={{ width: '100%', backgroundColor: 'white', color: '#757575', border: '1px solid #ddd', fontWeight: 'bold' }}
+                >
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" style={{ width: '20px', height: '20px', marginRight: '8px' }} />
+                    Sign in with Google
+                </button>
+            </div>
         </div>
     );
 }
