@@ -5,7 +5,7 @@ load_dotenv()
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
 from fastapi import FastAPI, File, UploadFile, Form
-from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Depends
+from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
@@ -20,6 +20,7 @@ from aws_services.transcribe import upload_audio_to_s3, start_transcription_job,
 from aws_services.location import reverse_geocode, verify_address
 from aws_services.bedrock import get_portal_routing
 from aws_services.nova_act_scraper import extract_form_fields
+from aws_services.detection_worker import process_video_segment
 import json
 import os
 import traceback
@@ -45,12 +46,23 @@ app.add_middleware(
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY") or os.urandom(24).hex())
 
 oauth = OAuth()
+
+cognito_metadata_url = f"https://cognito-idp.{os.getenv('AWS_REGION', 'ap-south-1')}.amazonaws.com/{os.getenv('COGNITO_USER_POOL_ID')}/.well-known/openid-configuration"
+
 oauth.register(
     name='cognito',
-    client_id=os.getenv("COGNITO_CLIENT_ID"),
-    client_secret=os.getenv("COGNITO_CLIENT_SECRET"),
-    server_metadata_url=f"https://cognito-idp.{os.getenv('AWS_REGION', 'ap-south-1')}.amazonaws.com/{os.getenv('COGNITO_USER_POOL_ID')}/.well-known/openid-configuration",
+    client_id=os.getenv("COGNITO_CLIENT_ID", "mock-client-id"),
+    client_secret=os.getenv("COGNITO_CLIENT_SECRET", "mock-secret"),
+    server_metadata_url=cognito_metadata_url,
     client_kwargs={'scope': 'email openid phone'}
+)
+
+oauth.register(
+    name='google',
+    client_id=os.getenv("GOOGLE_CLIENT_ID", "mock-google-client-id"),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET", "mock-google-secret"),
+    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+    client_kwargs={'scope': 'openid email profile'}
 )
 
 @app.get("/api/health")
@@ -86,6 +98,10 @@ except Exception as e:
 
 @app.get("/login")
 async def login(request: Request):
+    if os.getenv('COGNITO_USER_POOL_ID') is None:
+        # If no real Cognito pool is configured, jump straight to the mock fallback
+        return RedirectResponse(url=f"{os.getenv('BACKEND_URL', 'http://localhost:8000')}/authorize")
+    
     redirect_uri = f"{os.getenv('BACKEND_URL', 'http://localhost:8000')}/authorize"
     return await oauth.cognito.authorize_redirect(request, redirect_uri)
 
@@ -152,6 +168,78 @@ async def authorize(request: Request):
         
     return JSONResponse({"error": "Failed to login"}, status_code=400)
 
+@app.get("/login/google")
+async def login_google(request: Request):
+    if os.getenv('GOOGLE_CLIENT_ID') is None:
+        # If no real Google OAuth is configured, jump straight to the mock fallback
+        return RedirectResponse(url=f"{os.getenv('BACKEND_URL', 'http://localhost:8000')}/authorize/google")
+    
+    redirect_uri = f"{os.getenv('BACKEND_URL', 'http://localhost:8000')}/authorize/google"
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+@app.get("/authorize/google")
+async def authorize_google(request: Request):
+    try:
+        token = await oauth.google.authorize_access_token(request)
+        user = token.get('userinfo')
+        if user:
+            request.session['user'] = user
+            request.session['id_token'] = token.get('id_token')
+            request.session['access_token'] = token.get('access_token')
+            
+            uuid_sub = user.get('sub')
+            user_metadata = None
+            if uuid_sub and users_table:
+                try:
+                    db_response = users_table.get_item(Key={'userId': uuid_sub})
+                    user_metadata = db_response.get('Item')
+
+                    if not user_metadata:
+                        import time as _time
+                        user_metadata = {
+                            'userId':       uuid_sub,
+                            'email':        user.get('email', ''),
+                            'phone_number': '', # Google might not give phone based on scope
+                            'createdAt':    str(int(_time.time())),
+                            'provider':     'google'
+                        }
+                        users_table.put_item(Item=user_metadata)
+                        print(f"New Google user created in DynamoDB: {uuid_sub}")
+                    else:
+                        print(f"Returning Google user found in DynamoDB: {uuid_sub}")
+
+                except Exception as e:
+                    print(f"Warning DB: {e}")
+            
+            request.session['userData'] = user_metadata
+            return RedirectResponse(url=f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/")
+            
+    except Exception as e:
+        print(f"Google OAuth Callback Error: {e}")
+        # fallback for mock testing without real Google flow
+        user = {"email": "mock-google@example.com", "sub": "mock-google-uuid", "name": "Google User"}
+        request.session['user'] = user
+        request.session['id_token'] = "mock-google-token"
+        
+        if users_table:
+            try:
+                import time as _time
+                user_metadata = {
+                    'userId':       user['sub'],
+                    'email':        user['email'],
+                    'phone_number': '',
+                    'createdAt':    str(int(_time.time())),
+                    'provider':     'google'
+                }
+                users_table.put_item(Item=user_metadata)
+                request.session['userData'] = user_metadata
+            except Exception as db_e:
+                print(f"Warning DB Mock Insert: {db_e}")
+                
+        return RedirectResponse(url=f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/")
+        
+    return JSONResponse({"error": "Failed to login with Google"}, status_code=400)
+
 @app.get("/api/auth/me")
 async def get_current_user(request: Request):
     user = request.session.get('user')
@@ -203,6 +291,34 @@ async def upload_evidence_to_s3(evidence: UploadFile = File(...), ticketId: str 
         print(f"S3 Upload Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to upload evidence to S3")
 
+# --- Engineer 2: Dashcam Processing Pipeline ---
+@app.post("/api/dashcam/upload")
+async def upload_dashcam_segment(
+    background_tasks: BackgroundTasks,
+    segment: UploadFile = File(...), 
+    lat: str = Form(None), 
+    lng: str = Form(None)
+):
+    print(f"[Dashcam] Received 5s segment: {segment.filename} (Lat: {lat}, Lng: {lng})")
+    
+    # Save the chunk locally for the worker to process
+    temp_dir = os.path.join(os.getcwd(), "temp", "dashcam")
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_path = os.path.join(temp_dir, f"{str(uuid.uuid4())[:8]}_{segment.filename}")
+    
+    with open(temp_path, "wb") as buffer:
+        buffer.write(await segment.read())
+        
+    metadata = {
+        "lat": lat,
+        "lng": lng
+    }
+    
+    # Queue the background processing
+    background_tasks.add_task(process_video_segment, temp_path, metadata, reports_table)
+    
+    return {"message": "Segment queued for AI detection", "status": "processing"}
+
 # --- Engineer 1: Database (DynamoDB Reports Table) ---
 @app.post("/api/reports/save")
 async def save_report_dynamodb(data: dict):
@@ -250,7 +366,7 @@ async def mock_transcribe(audio: UploadFile = File(...)):
         return {"error": "Failed to upload audio to S3"}
         
     # 3. Start Transcribe Job
-    job_name = f"sewa_sahayak_transcribe_{uuid.uuid4().hex[:8]}"
+    job_name = f"sewa_sahayak_transcribe_{str(uuid.uuid4())[:8]}"
     print(f"Starting Transcription Job: {job_name} for URI: {s3_uri}...")
     
     # Extract extension for format
@@ -504,3 +620,69 @@ async def serve_static_root(file_name: str):
     
     # SPA fallback: Serve index.html for unknown routes
     return FileResponse("../dist/index.html")
+
+# --- Engineer 3: Pothole Clustering & AI Complaint Generation ---
+
+MOCK_CLUSTERS = [
+    {
+        "cluster_id": "cluster_001",
+        "latitude": 23.0225,
+        "longitude": 72.5714,
+        "event_count": 4,
+        "severity": "severe",
+        "road_name": "SG Highway",
+        "representative_clip": "/temp/dashcam/mock_clip.mp4"
+    },
+    {
+        "cluster_id": "cluster_002",
+        "latitude": 23.0330,
+        "longitude": 72.5800,
+        "event_count": 2,
+        "severity": "moderate",
+        "road_name": "CG Road",
+        "representative_clip": "/temp/dashcam/mock_clip2.mp4"
+    }
+]
+
+@app.get("/api/clusters")
+def get_pothole_clusters():
+    """
+    Returns spatial clusters of pothole events.
+    In a real scenario, this runs DBSCAN on the DynamoDB events table.
+    """
+    print("[Clustering Engine] Fetching recent pothole hotspots...")
+    return {"clusters": MOCK_CLUSTERS}
+
+class ComplaintRequest(BaseModel):
+    cluster_id: str
+    latitude: float
+    longitude: float
+    road_name: str
+    event_count: int
+    severity: str
+
+@app.post("/api/reports/generate_complaint")
+def generate_pothole_complaint(req: ComplaintRequest):
+    """
+    Uses Amazon Bedrock (Nova Pro stub) to write a formal draft.
+    """
+    print(f"[Bedrock] Generating structured complaint for cluster {req.cluster_id}")
+    time.sleep(1.5)
+    
+    draft_text = (
+        f"To the concerned Highways/PWD Authority,\n\n"
+        f"This is an automated citizen alert regarding severe road damage.\n"
+        f"Location: {req.road_name} (GPS: {req.latitude}, {req.longitude})\n"
+        f"Severity: {req.severity.upper()}\n"
+        f"Observations: Over {req.event_count} separate dashcam events have recorded deep potholes in this exact area over the last 48 hours.\n\n"
+        f"We kindly request an immediate inspection and repair of this section to prevent potential accidents.\n\n"
+        f"Evidence clips are strictly available upon request via the Sewa Sahayak portal."
+    )
+    
+    return {
+        "complaint_id": str(uuid.uuid4()),
+        "generated_draft": draft_text,
+        "suggested_authority": "Municipal Corporation" if "Road" in req.road_name else "NHAI",
+        "status": "ready_for_review"
+    }
+
