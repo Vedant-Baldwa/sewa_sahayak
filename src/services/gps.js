@@ -1,64 +1,106 @@
 /**
  * GPS Extraction and Jurisdiction Mapping Service
+ * Uses real browser Geolocation API + backend routing
  */
 
-// Uses browser Geolocation API to get high-accuracy coordinates
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+
+/**
+ * Uses the real browser Geolocation API to get high-accuracy GPS coordinates.
+ * Falls back gracefully if permissions are denied or unavailable.
+ */
 export const getDeviceLocation = async () => {
     return new Promise((resolve, reject) => {
         if (!navigator.geolocation) {
-            reject(new Error("Geolocation is not supported by your browser"));
+            console.warn("[GPS] Geolocation API not available in this browser.");
+            reject(new Error("Geolocation is not supported by this browser."));
             return;
         }
 
-        // In a real app we would ask for permissions gracefully
         navigator.geolocation.getCurrentPosition(
             (position) => {
-                resolve({
+                const locationData = {
                     lat: position.coords.latitude,
                     lng: position.coords.longitude,
                     accuracy: position.coords.accuracy,
+                    altitude: position.coords.altitude,
+                    speed: position.coords.speed,
                     timestamp: position.timestamp
-                });
+                };
+                console.log(`[GPS] Real location acquired: (${locationData.lat.toFixed(6)}, ${locationData.lng.toFixed(6)}) ±${locationData.accuracy.toFixed(0)}m`);
+                resolve(locationData);
             },
-            (err) => {
-                // Fallback for mocked local testing without permissions
-                console.warn("Geolocation failed, using mock location", err);
-                resolve({
-                    lat: 19.0760, // Mumbai Mock
-                    lng: 72.8777,
-                    accuracy: 50,
-                    timestamp: Date.now()
-                });
+            (error) => {
+                let reason;
+                switch (error.code) {
+                    case error.PERMISSION_DENIED:
+                        reason = "Location permission denied by user.";
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        reason = "Location information unavailable.";
+                        break;
+                    case error.TIMEOUT:
+                        reason = "Location request timed out.";
+                        break;
+                    default:
+                        reason = `Unknown error: ${error.message}`;
+                }
+                console.warn(`[GPS] Failed to get location: ${reason}`);
+                reject(new Error(reason));
             },
-            { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+            {
+                enableHighAccuracy: true,   // Use GPS hardware if available
+                timeout: 15000,             // Wait up to 15 seconds
+                maximumAge: 60000           // Accept cached position up to 1 minute old
+            }
         );
     });
 };
 
-// Maps coordinates to a specific government body and portal
-export const mapJurisdiction = (lat, lng) => {
-    console.log(`Mapping jurisdiction for: ${lat}, ${lng}`);
+/**
+ * Maps GPS coordinates to a government jurisdiction by calling the backend's
+ * cognitive dispatcher (/api/route), which uses real AWS Location Service
+ * for reverse geocoding and Amazon Bedrock for portal routing.
+ */
+export const mapJurisdiction = async (lat, lng) => {
+    console.log(`[Jurisdiction] Routing via backend for: (${lat}, ${lng})`);
 
-    // Dummy Ruleset:
-    // If we are around Mumbai coordinates (approx), route it to Municipal (BMC)
-    // Else if some other coordinate, State/Central
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/route`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ lat, lng })
+        });
 
-    if (lat > 18.5 && lat < 19.5 && lng > 72.0 && lng < 73.5) {
+        if (!res.ok) {
+            throw new Error(`Backend routing failed: HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        const routing = data.routing || {};
+        const address = data.structured_address || {};
+
         return {
-            jurisdiction_level: "Municipal",
-            portal_name: "BMC Pothole Tracking Portal",
-            portal_url: "https://mock-mcgm.gov.in/report",
-            ward_district: "K-East Ward, Andheri",
+            jurisdiction_level: routing.portal_name?.includes("Municipal") ? "Municipal"
+                : routing.portal_name?.includes("NHAI") ? "Central" : "State",
+            portal_name: routing.portal_name || "Government Portal",
+            portal_url: routing.portal_url || "",
+            ward_district: address.District || address.City || "Unknown",
+            reasoning: routing.reasoning || "",
+            mapped_coordinates: { lat, lng }
+        };
+
+    } catch (err) {
+        console.error("[Jurisdiction] Backend routing error, using fallback:", err);
+        // Fallback: return a generic result so the app doesn't break
+        return {
+            jurisdiction_level: "Unknown",
+            portal_name: "CPGRAMS (Central)",
+            portal_url: "https://pgportal.gov.in/Registration",
+            ward_district: "Unknown",
+            reasoning: "Fallback — backend routing unavailable.",
             mapped_coordinates: { lat, lng }
         };
     }
-
-    // Default fallback
-    return {
-        jurisdiction_level: "State",
-        portal_name: "State Public Works Department (PWD)",
-        portal_url: "https://mock-pwd.gov.in/complaints",
-        ward_district: "Highway Division 4",
-        mapped_coordinates: { lat, lng }
-    };
 };

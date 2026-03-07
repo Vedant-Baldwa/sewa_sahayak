@@ -11,6 +11,7 @@ export const mockRedactMedia = async (mediaBlob) => {
         const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
         const response = await fetch(`${BACKEND_URL}/api/redact`, {
             method: 'POST',
+            credentials: 'include',
             body: formData
         });
 

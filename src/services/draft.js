@@ -3,13 +3,15 @@
  */
 export const mockGenerateDraft = async (captureData) => {
     console.log(`[Amazon Bedrock Draft via Python API] Generating drafted complaint...`);
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
     try {
-        const response = await fetch('http://localhost:8000/api/draft', {
+        const response = await fetch(`${BACKEND_URL}/api/draft`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
+            credentials: 'include',
             body: JSON.stringify(captureData)
         });
 

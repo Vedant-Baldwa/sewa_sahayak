@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { FileText, AlertTriangle, ShieldCheck, MapPin } from 'lucide-react';
+import { FileText, AlertTriangle, ShieldCheck, MapPin, ExternalLink, Globe, CheckCircle, Video, Image as ImageIcon, Download } from 'lucide-react';
 
 // Fix for default Leaflet marker icons in React
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -27,19 +27,26 @@ const getSeverityColor = (severity) => {
 const Dashboard = () => {
     const [clusters, setClusters] = useState([]);
     const [selectedCluster, setSelectedCluster] = useState(null);
-    const [draftRequestStatus, setDraftRequestStatus] = useState(null); // 'idle' | 'generating' | 'done'
+    const [draftRequestStatus, setDraftRequestStatus] = useState(null);
     const [generatedDraft, setGeneratedDraft] = useState(null);
+    const [totalEvents, setTotalEvents] = useState(0);
 
     useEffect(() => {
         fetchClusters();
+        // Auto-refresh every 15 seconds to pick up newly processed events
+        const interval = setInterval(fetchClusters, 15000);
+        return () => clearInterval(interval);
     }, []);
 
     const fetchClusters = async () => {
         try {
             const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
-            const res = await fetch(`${BACKEND_URL}/api/clusters`);
+            const res = await fetch(`${BACKEND_URL}/api/clusters`, { credentials: 'include' });
             const data = await res.json();
             setClusters(data.clusters || []);
+            // Count total events across clusters
+            const total = (data.clusters || []).reduce((sum, c) => sum + c.event_count, 0);
+            setTotalEvents(total);
         } catch (error) {
             console.error("Failed to fetch clusters:", error);
         }
@@ -54,7 +61,8 @@ const Dashboard = () => {
             const res = await fetch(`${BACKEND_URL}/api/reports/generate_complaint`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(selectedCluster)
+                body: JSON.stringify(selectedCluster),
+                credentials: 'include'
             });
             const data = await res.json();
             setGeneratedDraft(data);
@@ -65,15 +73,71 @@ const Dashboard = () => {
         }
     };
 
+    // Group clusters by portal for the sidebar summary
+    const portalGroups = {};
+    clusters.forEach(c => {
+        const key = c.portal_url || 'unknown';
+        if (!portalGroups[key]) {
+            portalGroups[key] = { portal_name: c.portal_name, portal_url: c.portal_url, clusters: [] };
+        }
+        portalGroups[key].clusters.push(c);
+    });
+
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '1rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '0.75rem' }}>
+            {/* Header Stats */}
             <div style={{ padding: '0 1rem' }}>
                 <h2 className="heading-3" style={{ marginBottom: '0.2rem' }}>Damage Intelligence Map</h2>
-                <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-                    Aggregated AI insights from crowdsourced dashcams.
+                <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', margin: 0 }}>
+                    Real-time AI insights from crowdsourced dashcams.
                 </p>
+                {clusters.length > 0 && (
+                    <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+                        <div style={{ background: 'rgba(59,130,246,0.1)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.8rem' }}>
+                            <strong style={{ color: 'var(--color-primary)' }}>{totalEvents}</strong> events detected
+                        </div>
+                        <div style={{ background: 'rgba(139,92,246,0.1)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.8rem' }}>
+                            <strong style={{ color: 'var(--color-secondary)' }}>{clusters.length}</strong> clusters
+                        </div>
+                        <div style={{ background: 'rgba(16,185,129,0.1)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.8rem' }}>
+                            <strong style={{ color: 'var(--color-success)' }}>{Object.keys(portalGroups).length}</strong> portals
+                        </div>
+                    </div>
+                )}
+                {clusters.length === 0 && (
+                    <div style={{ background: 'rgba(0,0,0,0.03)', padding: '1rem', borderRadius: '8px', marginTop: '0.5rem', textAlign: 'center', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                        No pothole events detected yet. Start the dashcam to begin recording and detecting road damage.
+                    </div>
+                )}
             </div>
 
+            {/* Portal Groups Summary (horizontal scrollable) */}
+            {Object.keys(portalGroups).length > 0 && (
+                <div style={{ padding: '0 1rem', overflowX: 'auto', display: 'flex', gap: '0.5rem' }}>
+                    {Object.values(portalGroups).map((group, idx) => (
+                        <div key={idx} style={{
+                            minWidth: '180px',
+                            background: 'linear-gradient(135deg, rgba(59,130,246,0.08), rgba(139,92,246,0.08))',
+                            padding: '8px 12px',
+                            borderRadius: '10px',
+                            border: '1px solid rgba(59,130,246,0.15)',
+                            fontSize: '0.78rem',
+                            flexShrink: 0
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '700', marginBottom: '4px' }}>
+                                <Globe size={14} />
+                                {group.portal_name}
+                            </div>
+                            <div style={{ color: 'var(--color-text-muted)' }}>
+                                {group.clusters.length} sub-area{group.clusters.length !== 1 ? 's' : ''} •{' '}
+                                {group.clusters.reduce((s, c) => s + c.event_count, 0)} events
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Map */}
             <div style={{ flex: 1, position: 'relative', borderRadius: '12px', overflow: 'hidden', margin: '0 1rem', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
                 <MapContainer center={[23.0225, 72.5714]} zoom={13} style={{ height: '100%', width: '100%' }}>
                     <TileLayer
@@ -84,7 +148,7 @@ const Dashboard = () => {
                     {clusters.map((cluster) => {
                         const customMarker = L.divIcon({
                             className: 'custom-marker',
-                            html: `<div style="background-color: ${getSeverityColor(cluster.severity)}; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.3);"></div>`,
+                            html: `<div style="background-color: ${getSeverityColor(cluster.severity)}; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-size: 10px; font-weight: bold;">${cluster.event_count}</div>`,
                             iconSize: [24, 24],
                             iconAnchor: [12, 12]
                         });
@@ -103,11 +167,14 @@ const Dashboard = () => {
                                 }}
                             >
                                 <Popup>
-                                    <div style={{ padding: '4px', textAlign: 'center' }}>
+                                    <div style={{ padding: '4px', textAlign: 'center', minWidth: '140px' }}>
                                         <b style={{ textTransform: 'capitalize', color: getSeverityColor(cluster.severity) }}>
                                             {cluster.severity} Damage
                                         </b><br />
-                                        {cluster.event_count} reports clustered
+                                        <span style={{ fontSize: '0.8rem' }}>{cluster.sub_area || cluster.road_name}</span><br />
+                                        <span style={{ fontSize: '0.75rem', color: '#666' }}>
+                                            {cluster.event_count} reports • {cluster.portal_name}
+                                        </span>
                                     </div>
                                 </Popup>
                             </Marker>
@@ -123,7 +190,7 @@ const Dashboard = () => {
                         <div>
                             <h3 style={{ margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <MapPin size={18} />
-                                {selectedCluster.road_name}
+                                {selectedCluster.sub_area || selectedCluster.road_name}
                             </h3>
                             <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
                                 Hotspot ID: {selectedCluster.cluster_id.split('_')[1]}
@@ -142,20 +209,112 @@ const Dashboard = () => {
                         </span>
                     </div>
 
-                    <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem', background: 'rgba(0,0,0,0.02)', padding: '0.75rem', borderRadius: '8px' }}>
-                        <div style={{ flex: 1 }}>
-                            <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: '600' }}>Aggregated Reports</p>
-                            <p style={{ margin: 0, fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--color-primary)' }}>{selectedCluster.event_count}</p>
+                    {/* Portal Info */}
+                    <div style={{
+                        marginTop: '0.75rem',
+                        padding: '8px 12px',
+                        background: 'linear-gradient(135deg, rgba(59,130,246,0.08), rgba(139,92,246,0.05))',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(59,130,246,0.15)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Globe size={16} style={{ color: 'var(--color-primary)' }} />
+                            <div>
+                                <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: '700' }}>{selectedCluster.portal_name}</p>
+                                <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>Filing Portal</p>
+                            </div>
                         </div>
-                        <div style={{ width: '1px', background: 'rgba(0,0,0,0.1)' }} />
-                        <div style={{ flex: 2 }}>
-                            <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: '600' }}>Representative Clip</p>
-                            <a href={selectedCluster.representative_clip} target="_blank" rel="noreferrer" style={{ fontSize: '0.8rem', color: 'var(--color-primary)', display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
-                                View Evidence
+                        {selectedCluster.portal_url && (
+                            <a
+                                href={selectedCluster.portal_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                    fontSize: '0.75rem', color: 'var(--color-primary)',
+                                    textDecoration: 'none',
+                                    padding: '4px 8px', background: 'white', borderRadius: '6px',
+                                    border: '1px solid rgba(59,130,246,0.2)'
+                                }}
+                            >
+                                <ExternalLink size={12} /> Open Portal
                             </a>
+                        )}
+                    </div>
+
+                    {/* Stats and Evidence */}
+                    <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', background: 'rgba(0,0,0,0.02)', padding: '1rem', borderRadius: '8px' }}>
+                        <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid rgba(0,0,0,0.05)', paddingBottom: '0.75rem' }}>
+                            <div style={{ flex: 1 }}>
+                                <p style={{ margin: '0 0 4px 0', fontSize: '0.85rem', fontWeight: '600' }}>Aggregated Reports</p>
+                                <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--color-primary)', lineHeight: '1' }}>{selectedCluster.event_count}</p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: '600', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <ShieldCheck size={14} /> Evidence Artifacts
+                            </p>
+                            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+                                {selectedCluster.representative_clip && (
+                                    <div style={{ flexShrink: 0, width: '100px', background: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(0,0,0,0.1)' }}>
+                                        <div style={{ height: '70px', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Video size={24} color="#64748b" />
+                                        </div>
+                                        <a href={selectedCluster.representative_clip} download target="_blank" rel="noreferrer" style={{ display: 'block', padding: '4px', textAlign: 'center', fontSize: '0.7rem', textDecoration: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 'bold' }}>
+                                            <Download size={10} style={{ marginRight: '2px' }} /> Clip
+                                        </a>
+                                    </div>
+                                )}
+                                {selectedCluster.best_images && selectedCluster.best_images.map((imgUrl, i) => (
+                                    <div key={i} style={{ flexShrink: 0, width: '100px', background: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(0,0,0,0.1)' }}>
+                                        <div style={{ height: '70px', backgroundImage: `url(${imgUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+                                        <a href={imgUrl} download target="_blank" rel="noreferrer" style={{ display: 'block', padding: '4px', textAlign: 'center', fontSize: '0.7rem', textDecoration: 'none', background: 'var(--color-success)', color: 'white', fontWeight: 'bold' }}>
+                                            <Download size={10} style={{ marginRight: '2px' }} /> Frame {i + 1}
+                                        </a>
+                                    </div>
+                                ))}
+                                {!selectedCluster.representative_clip && (!selectedCluster.best_images || selectedCluster.best_images.length === 0) && (
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>No artifacts available</span>
+                                )}
+                            </div>
                         </div>
                     </div>
 
+                    {/* Individual Events List */}
+                    {selectedCluster.events && selectedCluster.events.length > 0 && (
+                        <div style={{ marginTop: '1rem' }}>
+                            <p style={{ margin: '0 0 8px', fontSize: '0.85rem', fontWeight: '600' }}>Event Details ({selectedCluster.events.length})</p>
+                            <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                {selectedCluster.events.map((ev, idx) => (
+                                    <div key={ev.event_id || idx} style={{
+                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                        padding: '6px 8px', borderRadius: '6px',
+                                        background: 'rgba(0,0,0,0.02)', border: '1px solid rgba(0,0,0,0.05)',
+                                        fontSize: '0.75rem'
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span style={{
+                                                width: '8px', height: '8px', borderRadius: '50%',
+                                                background: getSeverityColor(ev.severity), flexShrink: 0
+                                            }} />
+                                            <span style={{ color: 'var(--color-text-muted)' }}>
+                                                {ev.address ? ev.address.substring(0, 40) + (ev.address.length > 40 ? '...' : '') : `GPS: ${ev.lat}, ${ev.lng}`}
+                                            </span>
+                                        </div>
+                                        <span style={{ fontWeight: '600', color: getSeverityColor(ev.severity), textTransform: 'capitalize' }}>
+                                            {ev.severity} ({(ev.confidence * 100).toFixed(0)}%)
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Generate Complaint Button */}
                     {!generatedDraft ? (
                         <button
                             className="btn btn-primary"
@@ -190,9 +349,34 @@ const Dashboard = () => {
                             }}>
                                 {generatedDraft.generated_draft}
                             </pre>
-                            <button className="btn btn-success" style={{ width: '100%', marginTop: '0.5rem', padding: '0.5rem' }}>
-                                Submit to Portal
-                            </button>
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '0.5rem' }}>
+                                {selectedCluster.portal_url && (
+                                    <a
+                                        href={selectedCluster.portal_url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="btn btn-primary"
+                                        style={{
+                                            flex: 1, padding: '0.5rem',
+                                            display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px',
+                                            textDecoration: 'none'
+                                        }}
+                                    >
+                                        <ExternalLink size={16} /> Open Portal
+                                    </a>
+                                )}
+                                <button
+                                    className="btn btn-success"
+                                    onClick={handleMarkFiled}
+                                    disabled={markFiledStatus !== 'idle'}
+                                    style={{
+                                        flex: 1, padding: '0.5rem',
+                                        display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px'
+                                    }}
+                                >
+                                    {markFiledStatus === 'marking' ? 'Marking...' : markFiledStatus === 'success' ? 'Filed!' : <><CheckCircle size={16} /> Mark as Filed</>}
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>

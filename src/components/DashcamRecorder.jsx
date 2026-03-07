@@ -37,7 +37,10 @@ const DashcamRecorder = () => {
     useEffect(() => {
         startCamera();
         return () => {
-            // Cleanup stream on unmount
+            // Cleanup stream and recording cycle on unmount
+            if (cycleIntervalRef.current) {
+                clearInterval(cycleIntervalRef.current);
+            }
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop());
             }
@@ -108,10 +111,68 @@ const DashcamRecorder = () => {
         return () => clearInterval(intervalId);
     }, [isOnline, syncSegments]);
 
+    // Ref to hold the cycling interval
+    const cycleIntervalRef = useRef(null);
+    const selectedTypeRef = useRef('');
+
+    /**
+     * Start a single short recording session that collects data into one
+     * self-contained blob, then automatically restarts for the next chunk.
+     * This avoids the broken-header problem of MediaRecorder timeslice.
+     */
+    const startSingleRecording = useCallback(() => {
+        if (!streamRef.current) return;
+
+        const chunks = [];
+        const recorder = new MediaRecorder(streamRef.current, { mimeType: selectedTypeRef.current });
+
+        recorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+                chunks.push(event.data);
+            }
+        };
+
+        recorder.onstop = async () => {
+            if (chunks.length === 0) return;
+            // Combine chunks into a single complete blob with proper headers
+            const completeBlob = new Blob(chunks, { type: selectedTypeRef.current });
+            console.log(`Captured complete segment: ${completeBlob.size} bytes`);
+
+            let loc = null;
+            try {
+                loc = await getDeviceLocation();
+            } catch (e) {
+                console.warn("Could not fetch GPS for this segment", e);
+            }
+
+            // Save chunk to IndexedDB
+            await saveDashcamSegment(completeBlob, {
+                mimeType: selectedTypeRef.current,
+                lat: loc?.lat,
+                lng: loc?.lng
+            });
+
+            setSegmentsCount(prev => prev + 1);
+            setUnsyncedCount(prev => prev + 1);
+
+            // Trigger sync if online
+            if (navigator.onLine) {
+                syncSegments();
+            }
+        };
+
+        recorder.start(); // No timeslice — record continuously
+        mediaRecorderRef.current = recorder;
+    }, [syncSegments]);
+
     // Start continuous recording
     const toggleRecording = async () => {
         if (isRecording) {
             // Stop
+            if (cycleIntervalRef.current) {
+                clearInterval(cycleIntervalRef.current);
+                cycleIntervalRef.current = null;
+            }
             if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
                 mediaRecorderRef.current.stop();
             }
@@ -126,51 +187,30 @@ const DashcamRecorder = () => {
         }
 
         try {
-            // Create a new MediaRecorder to chunk the video every 5 seconds
-            const options = { mimeType: 'video/mp4; codecs="avc1.42E01E"' };
+            // Detect best supported video format
             const types = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
-            let selectedType = '';
+            selectedTypeRef.current = '';
             for (const t of types) {
                 if (MediaRecorder.isTypeSupported(t)) {
-                    selectedType = t;
+                    selectedTypeRef.current = t;
                     break;
                 }
             }
 
-            const mediaRecorder = new MediaRecorder(streamRef.current, { mimeType: selectedType });
-
-            mediaRecorder.ondataavailable = async (event) => {
-                if (event.data && event.data.size > 0) {
-                    console.log(`Captured 5-second chunk: ${event.data.size} bytes`);
-
-                    let loc = null;
-                    try {
-                        loc = await getDeviceLocation();
-                    } catch (e) {
-                        console.warn("Could not fetch GPS for this segment", e);
-                    }
-
-                    // Save chunk to IndexedDB
-                    await saveDashcamSegment(event.data, {
-                        mimeType: selectedType,
-                        lat: loc?.lat,
-                        lng: loc?.lng
-                    });
-
-                    setSegmentsCount(prev => prev + 1);
-                    setUnsyncedCount(prev => prev + 1);
-
-                    // Force local sync trigger if online (though the setInterval will catch it anyway)
-                    if (navigator.onLine) {
-                        syncSegments();
-                    }
-                }
-            };
-
-            mediaRecorder.start(5000); // Trigger ondataavailable every 5000ms
-            mediaRecorderRef.current = mediaRecorder;
             setIsRecording(true);
             setSegmentsCount(0);
+
+            // Start the first recording immediately
+            startSingleRecording();
+
+            // Every 5 seconds: stop the current recording (triggers onstop → saves blob)
+            // and start a fresh one with new headers
+            cycleIntervalRef.current = setInterval(() => {
+                if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                    mediaRecorderRef.current.stop(); // triggers onstop → saves complete blob
+                }
+                startSingleRecording();
+            }, 5000);
 
         } catch (err) {
             console.error("Could not start MediaRecorder", err);

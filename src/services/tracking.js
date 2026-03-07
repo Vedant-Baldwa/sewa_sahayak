@@ -20,6 +20,7 @@ export const saveReportToDynamoDB = async (ticketId, draft, captureId) => {
         const res = await fetch(`${BACKEND_URL}/api/reports/save`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            credentials: "include",
             body: JSON.stringify(payload)
         });
         if (!res.ok) throw new Error("DynamoDB save failed");
@@ -45,6 +46,7 @@ export const uploadEvidenceToS3 = async (blob, ticketId) => {
         const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
         const res = await fetch(`${BACKEND_URL}/api/evidence/upload`, {
             method: "POST",
+            credentials: "include",
             body: formData
         });
         if (!res.ok) throw new Error("S3 Upload Failed");

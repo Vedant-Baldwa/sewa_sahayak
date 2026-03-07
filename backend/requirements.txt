@@ -10,3 +10,5 @@ itsdangerous
 Pillow
 nova-act
 playwright
+opencv-python-headless
+numpy
