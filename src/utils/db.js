@@ -1,9 +1,9 @@
 import { openDB } from 'idb';
 
 const DB_NAME = 'SewaSahayakDB';
-const DB_VERSION = 2;
+const DB_VERSION = 6;
 const STORE_NAME = 'media_captures';
-const DASHCAM_STORE = 'dashcam_segments';
+const REPORTS_STORE = 'reports';
 
 export const initDB = async () => {
     return openDB(DB_NAME, DB_VERSION, {
@@ -13,10 +13,9 @@ export const initDB = async () => {
                 store.createIndex('timestamp', 'timestamp');
                 store.createIndex('synced', 'synced');
             }
-            if (!db.objectStoreNames.contains(DASHCAM_STORE)) {
-                const store = db.createObjectStore(DASHCAM_STORE, { keyPath: 'id', autoIncrement: true });
+            if (!db.objectStoreNames.contains(REPORTS_STORE)) {
+                const store = db.createObjectStore(REPORTS_STORE, { keyPath: 'id' });
                 store.createIndex('timestamp', 'timestamp');
-                store.createIndex('synced', 'synced');
             }
         },
     });

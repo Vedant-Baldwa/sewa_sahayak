@@ -1,9 +1,11 @@
 /**
- * Refactored Amazon Bedrock Draft Generation Service connecting to Python Backend
+ * Amazon Bedrock Draft Generation Service - Real Backend Integration
  */
-export const mockGenerateDraft = async (captureData) => {
-    console.log(`[Amazon Bedrock Draft via Python API] Generating drafted complaint...`);
-    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+
+export const generateDraftWithBedrock = async (captureData) => {
+    console.log(`[Amazon Bedrock Draft] Generating formal complaint draft via real API...`);
 
     try {
         const response = await fetch(`${BACKEND_URL}/api/draft`, {
@@ -11,14 +13,18 @@ export const mockGenerateDraft = async (captureData) => {
             headers: {
                 'Content-Type': 'application/json'
             },
-            credentials: 'include',
-            body: JSON.stringify(captureData)
+            body: JSON.stringify(captureData),
+            credentials: 'include'
         });
 
-        if (!response.ok) throw new Error("Backend API Error");
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || "Draft Generation API Error");
+        }
+
         return await response.json();
     } catch (error) {
-        console.error("Draft Generation API failed:", error);
+        console.error("Draft Generation failed:", error);
         throw error;
     }
 };

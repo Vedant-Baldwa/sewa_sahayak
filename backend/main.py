@@ -1,72 +1,124 @@
-import os
-import subprocess
-from dotenv import load_dotenv
-
-load_dotenv()
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
-
-from fastapi import FastAPI, File, UploadFile, Form
-from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Depends, BackgroundTasks
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
-from pydantic import BaseModel
+from fastapi.requests import Request
 from starlette.middleware.sessions import SessionMiddleware
-from authlib.integrations.starlette_client import OAuth
-from dotenv import load_dotenv
-import mimetypes
-import time
-import uuid
-from aws_services.transcribe import upload_audio_to_s3, start_transcription_job, poll_transcription_job, extract_transcript
-from aws_services.location import reverse_geocode, verify_address
-from aws_services.bedrock import get_portal_routing
-from aws_services.nova_act_scraper import extract_form_fields
-from aws_services.detection_worker import process_video_segment
-import json
+from pydantic import BaseModel
+from core.config import Config
+from api.router import auth, evidence, reports, ai, agentic, chatbot
+from services.aws.amazon_transcribe import (
+    upload_audio_to_s3, 
+    start_transcription_job, 
+    poll_transcription_job, 
+    extract_transcript
+)
+from pydantic import BaseModel as PydanticBase
 import os
-import traceback
+import uuid
+import time
+import json
 
-# Load environment variables from .env file
-load_dotenv()
+app = FastAPI(title="Sewa Sahayak API - Modular")
 
-mimetypes.add_type("application/javascript", ".js")
-mimetypes.add_type("text/css", ".css")
-
-app = FastAPI(title="Sewa Sahayak PWA API (Mock)")
-
-# CORS Middleware to allow requests from the Vite frontend
+# Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=".*",
+    allow_origins=[Config.FRONTEND_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Session Middleware for Authlib OAuth
-app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY") or os.urandom(24).hex())
-
-oauth = OAuth()
-
-cognito_metadata_url = f"https://cognito-idp.{os.getenv('AWS_REGION', 'ap-south-1')}.amazonaws.com/{os.getenv('COGNITO_USER_POOL_ID')}/.well-known/openid-configuration"
-
-oauth.register(
-    name='cognito',
-    client_id=os.getenv("COGNITO_CLIENT_ID", "mock-client-id"),
-    client_secret=os.getenv("COGNITO_CLIENT_SECRET", "mock-secret"),
-    server_metadata_url=cognito_metadata_url,
-    client_kwargs={'scope': 'email openid phone'}
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=Config.SECRET_KEY,
+    same_site="lax",
+    max_age=86400 * 7,   # 7-day sessions
 )
 
-oauth.register(
-    name='google',
-    client_id=os.getenv("GOOGLE_CLIENT_ID", "mock-google-client-id"),
-    client_secret=os.getenv("GOOGLE_CLIENT_SECRET", "mock-google-secret"),
-    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
-    client_kwargs={'scope': 'openid email profile'}
-)
+# Routers
+app.include_router(auth.router)
+app.include_router(evidence.router)
+app.include_router(reports.router)
+app.include_router(ai.router)
+app.include_router(agentic.router)
+app.include_router(chatbot.router)
 
 @app.get("/api/health")
+def health():
+    return {"status": "running", "version": "2.0.0-modular"}
+
+# ── User state (chat session persistence per user session) ───────────────────
+
+@app.get("/api/user/state")
+async def get_user_state(request: Request):
+    user = request.session.get("user")
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+        
+    uuid_sub = user.get('sub')
+    if users_table and uuid_sub:
+        try:
+            db_response = users_table.get_item(Key={'userId': uuid_sub})
+            item = db_response.get('Item', {})
+            return {
+                "chat_sessions": item.get("chat_sessions", request.session.get("chat_sessions", [])),
+                "activeChatId": item.get("active_chat_id", request.session.get("active_chat_id", None))
+            }
+        except Exception as e:
+            print(f"DynamoDB get state error: {e}")
+
+    return {
+        "chat_sessions": request.session.get("chat_sessions", []),
+        "activeChatId":  request.session.get("active_chat_id", None),
+    }
+
+class ChatStateBody(PydanticBase):
+    sessions: list = []
+    activeChatId: str = ""
+
+@app.post("/api/user/state/chats")
+async def save_user_chats(body: ChatStateBody, request: Request):
+    user = request.session.get("user")
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+        
+    # Trim each session 
+    trimmed = []
+    for s in body.sessions:
+        trimmed.append({**s, "messages": s.get("messages", [])[-30:]})
+        
+    # Try saving to DB first
+    uuid_sub = user.get('sub')
+    if users_table and uuid_sub:
+        try:
+            users_table.update_item(
+                Key={'userId': uuid_sub},
+                UpdateExpression="SET chat_sessions = :cs, active_chat_id = :acid",
+                ExpressionAttributeValues={
+                    ':cs': trimmed,
+                    ':acid': body.activeChatId
+                }
+            )
+        except Exception as e:
+            print(f"DynamoDB save state error: {e}")
+            
+    # And keep in session as backup (though might get dropped if too big)
+    request.session["chat_sessions"]  = trimmed
+    request.session["active_chat_id"] = body.activeChatId
+    return {"saved": True}
+
+# SPA Support (Serve Vite build)
+DIST_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dist")
+if os.path.exists(DIST_DIR):
+    app.mount("/assets", StaticFiles(directory=os.path.join(DIST_DIR, "assets")), name="assets")
+    
+    @app.get("/{file_path:path}")
+    async def serve_spa(file_path: str):
+        if file_path.startswith("api/"): return
+        full_path = os.path.join(DIST_DIR, file_path)
+        if os.path.isfile(full_path): return FileResponse(full_path)
+        return FileResponse(os.path.join(DIST_DIR, "index.html"))
 def read_root():
     return {"message": "Sewa Sahayak AWS API Running"}
 
@@ -770,9 +822,13 @@ async def mock_generate_draft(data: dict):
     
     analysis_desc = data.get("analysis", {}).get("suggested_description", "")
     transcript_desc = data.get("transcription", {}).get("transcript", "")
+    location_address = data.get("locationData", {}).get("address", "")
     
     description = analysis_desc or ("Voice Report: " + transcript_desc) or "Observed civic issue."
     
+    if location_address:
+        description += f"\n\nReported Location: {location_address}"
+        
     return {
         "applicantName": "A Citizen",
         "phoneNumber": "+91-9876543210",
@@ -783,336 +839,16 @@ async def mock_generate_draft(data: dict):
         "description": f"To the concerned authority,\n\nI am reporting a issue regarding civic hazard.\n\nDetails:\n{description}\n\nPlease address this at your earliest convenience.\n\nThank you.",
     }
 
-# Serve static assets from Vite dist folder
-app.mount("/assets", StaticFiles(directory="../dist/assets"), name="assets")
+# Serve static assets from Vite dist folder (only when built)
+_DIST_ASSETS = os.path.join(os.path.dirname(__file__), "..", "dist", "assets")
+if os.path.exists(_DIST_ASSETS):
+    app.mount("/assets", StaticFiles(directory=_DIST_ASSETS), name="assets_static")
 
-# Serve the temp directory for clips and extracted images
-import os
-os.makedirs("temp", exist_ok=True)
-app.mount("/temp", StaticFiles(directory="temp"), name="temp")
-
-
-# --- Engineer 3: Pothole Clustering & AI Complaint Generation ---
-
-def _get_user_events(user_id: str) -> list:
-    """Return the events list for a given userId (empty list if none)."""
-    return POTHOLE_EVENTS.get(user_id, [])
-
-
-def _build_portal_clusters(events: list):
-    """
-    Clusters detected pothole events in two tiers:
-      1. Group by portal_url (which government website to file on)
-      2. Within each portal, sub-group by sub_area (district/city/ward)
-    Returns a flat list of clusters for the map, each tied to a portal.
-    """
-    from collections import defaultdict
-
-    # Tier 1: group by portal_url
-    portal_groups = defaultdict(list)
-    for event in events:
-        portal_url = event.get("portal_url", "unknown")
-        portal_groups[portal_url].append(event)
-
-    clusters = []
-    cluster_counter = 0
-
-    for portal_url, portal_events in portal_groups.items():
-        # Tier 2: sub-group by sub_area within this portal
-        sub_area_groups = defaultdict(list)
-        for ev in portal_events:
-            sub_area_groups[ev.get("sub_area", "Unknown")].append(ev)
-
-        for sub_area, sub_events in sub_area_groups.items():
-            cluster_counter += 1
-
-            # Compute aggregate stats
-            lats = [float(e["lat"]) for e in sub_events if e.get("lat")]
-            lngs = [float(e["lng"]) for e in sub_events if e.get("lng")]
-            center_lat = sum(lats) / len(lats) if lats else 0
-            center_lng = sum(lngs) / len(lngs) if lngs else 0
-
-            severities = [e.get("severity", "minor") for e in sub_events]
-            worst = "severe" if "severe" in severities else ("moderate" if "moderate" in severities else "minor")
-
-            # Pick the most recent clip as representative
-            sorted_events = sorted(sub_events, key=lambda e: e.get("timestamp", "0"), reverse=True)
-            representative_clip = sorted_events[0].get("clip_url", "")
-            
-            # Gather best images (sorted by confidence)
-            events_by_conf = sorted(sub_events, key=lambda e: e.get("confidence", 0), reverse=True)
-            best_images = []
-            for e in events_by_conf:
-                images = e.get("extracted_images", [])
-                for img in images:
-                    if img not in best_images:
-                        best_images.append(img)
-                if len(best_images) >= 4:
-                    break
-            best_images = best_images[:4]
-
-            clusters.append({
-                "cluster_id": f"cluster_{cluster_counter:03d}",
-                "portal_name": sub_events[0].get("portal_name", "Unknown"),
-                "portal_url": portal_url,
-                "sub_area": sub_area,
-                "latitude": center_lat,
-                "longitude": center_lng,
-                "event_count": len(sub_events),
-                "severity": worst,
-                "road_name": sub_area,
-                "representative_clip": representative_clip,
-                "best_images": best_images,
-                "events": [
-                    {
-                        "event_id": e["event_id"],
-                        "severity": e["severity"],
-                        "confidence": e["confidence"],
-                        "lat": e.get("lat"),
-                        "lng": e.get("lng"),
-                        "clip_url": e.get("clip_url"),
-                        "address": e.get("address", ""),
-                        "timestamp": e.get("timestamp")
-                    }
-                    for e in sorted_events
-                ]
-            })
-
-    return clusters
-
-
-@app.get("/api/clusters")
-def get_pothole_clusters(request: Request):
-    """
-    Returns pothole clusters for the logged-in user only.
-    """
-    user = request.session.get('user')
-    user_id = user.get('sub', 'anonymous') if user else 'anonymous'
-    user_events = _get_user_events(user_id)
-    print(f"[Clustering Engine] Building clusters from {len(user_events)} events for user {user_id}...")
-    clusters = _build_portal_clusters(user_events)
-    print(f"[Clustering Engine] Produced {len(clusters)} clusters.")
-    return {"clusters": clusters}
-
-
-@app.get("/api/events")
-def get_all_events(request: Request):
-    """Returns all raw detected pothole events for the logged-in user."""
-    user = request.session.get('user')
-    user_id = user.get('sub', 'anonymous') if user else 'anonymous'
-    user_events = _get_user_events(user_id)
-    return {"events": user_events, "total": len(user_events)}
-
-
-class MarkFiledRequest(BaseModel):
-    cluster_id: str
-    portal_url: str
-    sub_area: str
-    portal_name: str
-    road_name: str
-    latitude: float
-    longitude: float
-
-@app.post("/api/clusters/mark_filed")
-def mark_cluster_filed(req: MarkFiledRequest, request: Request):
-    """
-    Marks a cluster as filed. Removes the associated events from the map
-    and saves a reference to DynamoDB so it appears in "My Reports".
-    """
-    user = request.session.get('user')
-    user_id = user.get('sub', 'anonymous') if user else 'anonymous'
-    
-    # 1. Store a report record in DynamoDB
-    if reports_table:
-        try:
-            report_data = {
-                "ticketId": f"FILED-{req.cluster_id}-{int(time.time())}",
-                "userId": user_id,
-                "jurisdiction": req.portal_name,
-                "ward": req.sub_area,
-                "lat": str(req.latitude),
-                "lng": str(req.longitude),
-                "damageType": "Road Damage Cluster",
-                "severity": "High",
-                "status": "Submitted to Portal",
-                "timestamp": str(int(time.time() * 1000)),
-                "description": f"Automated dashcam report filed to {req.portal_name} for area {req.sub_area}."
-            }
-            reports_table.put_item(Item=report_data)
-        except Exception as e:
-            print(f"Error saving filed report to DynamoDB: {e}")
-
-    # 2. Clear those events from the user's active map
-    if user_id in POTHOLE_EVENTS:
-        original_count = len(POTHOLE_EVENTS[user_id])
-        # Keep events that DO NOT match both portal_url and sub_area
-        POTHOLE_EVENTS[user_id] = [
-            e for e in POTHOLE_EVENTS[user_id]
-            if not (e.get("portal_url") == req.portal_url and e.get("sub_area") == req.sub_area)
-        ]
-        removed_count = original_count - len(POTHOLE_EVENTS[user_id])
-        print(f"[Map] Removed {removed_count} events from map since cluster {req.cluster_id} is filed.")
-
-    return {"message": "Cluster filed successfully and events cleared from map."}
-
-
-
-@app.post("/api/test/seed_events")
-def seed_test_events(request: Request):
-    """
-    Injects realistic mock pothole events for the logged-in user.
-    Creates multiple sub-areas within the same portal to verify grouping.
-    """
-    import random
-
-    user = request.session.get('user')
-    user_id = user.get('sub', 'anonymous') if user else 'anonymous'
-
-    if user_id not in POTHOLE_EVENTS:
-        POTHOLE_EVENTS[user_id] = []
-
-    test_events = [
-        # --- Portal: AHMEDABAD_AMC (3 sub-areas) ---
-        # Sub-area: Navrangpura (3 events)
-        {"lat": "23.0365", "lng": "72.5611", "sub_area": "Navrangpura", "portal_name": "AHMEDABAD_AMC",
-         "portal_url": "https://www.amccrs.com/AMCPortal/View/ComplaintRegistration.aspx",
-         "address": "CG Road, Navrangpura, Ahmedabad, Gujarat"},
-        {"lat": "23.0370", "lng": "72.5620", "sub_area": "Navrangpura", "portal_name": "AHMEDABAD_AMC",
-         "portal_url": "https://www.amccrs.com/AMCPortal/View/ComplaintRegistration.aspx",
-         "address": "Law Garden, Navrangpura, Ahmedabad, Gujarat"},
-        {"lat": "23.0358", "lng": "72.5605", "sub_area": "Navrangpura", "portal_name": "AHMEDABAD_AMC",
-         "portal_url": "https://www.amccrs.com/AMCPortal/View/ComplaintRegistration.aspx",
-         "address": "Swastik Cross Road, Navrangpura, Ahmedabad, Gujarat"},
-        # Sub-area: Maninagar (2 events)
-        {"lat": "23.0050", "lng": "72.6050", "sub_area": "Maninagar", "portal_name": "AHMEDABAD_AMC",
-         "portal_url": "https://www.amccrs.com/AMCPortal/View/ComplaintRegistration.aspx",
-         "address": "Maninagar Station Road, Maninagar, Ahmedabad, Gujarat"},
-        {"lat": "23.0045", "lng": "72.6060", "sub_area": "Maninagar", "portal_name": "AHMEDABAD_AMC",
-         "portal_url": "https://www.amccrs.com/AMCPortal/View/ComplaintRegistration.aspx",
-         "address": "Kagdapith, Maninagar, Ahmedabad, Gujarat"},
-        # Sub-area: SG Highway (2 events)
-        {"lat": "23.0225", "lng": "72.5100", "sub_area": "SG Highway", "portal_name": "AHMEDABAD_AMC",
-         "portal_url": "https://www.amccrs.com/AMCPortal/View/ComplaintRegistration.aspx",
-         "address": "SG Highway near Thaltej, Ahmedabad, Gujarat"},
-        {"lat": "23.0240", "lng": "72.5090", "sub_area": "SG Highway", "portal_name": "AHMEDABAD_AMC",
-         "portal_url": "https://www.amccrs.com/AMCPortal/View/ComplaintRegistration.aspx",
-         "address": "SG Highway near Sola, Ahmedabad, Gujarat"},
-
-        # --- Portal: GUJARAT_SWAGAT (2 sub-areas) ---
-        # Sub-area: Gandhinagar District (2 events)
-        {"lat": "23.2156", "lng": "72.6369", "sub_area": "Gandhinagar District", "portal_name": "GUJARAT_SWAGAT",
-         "portal_url": "https://swagat.gujarat.gov.in/",
-         "address": "Sector 21, Gandhinagar, Gujarat"},
-        {"lat": "23.2200", "lng": "72.6400", "sub_area": "Gandhinagar District", "portal_name": "GUJARAT_SWAGAT",
-         "portal_url": "https://swagat.gujarat.gov.in/",
-         "address": "Infocity, Gandhinagar, Gujarat"},
-        # Sub-area: Mehsana District (1 event)
-        {"lat": "23.5880", "lng": "72.3693", "sub_area": "Mehsana District", "portal_name": "GUJARAT_SWAGAT",
-         "portal_url": "https://swagat.gujarat.gov.in/",
-         "address": "NH-48 near Mehsana, Gujarat"},
-
-        # --- Portal: NHAI (1 sub-area) ---
-        {"lat": "23.1000", "lng": "72.5500", "sub_area": "NH-48 Stretch", "portal_name": "NHAI",
-         "portal_url": "https://pgportal.gov.in/",
-         "address": "NH-48 Ahmedabad-Vadodara Expressway, Gujarat"},
-        {"lat": "23.1020", "lng": "72.5480", "sub_area": "NH-48 Stretch", "portal_name": "NHAI",
-         "portal_url": "https://pgportal.gov.in/",
-         "address": "NH-48 near Adalaj, Gujarat"},
-    ]
-
-    for ev_data in test_events:
-        severity = random.choice(["minor", "moderate", "severe"])
-        confidence = round(random.uniform(0.75, 0.98), 2)
-        event = {
-            "event_id": str(uuid.uuid4()),
-            "type": "pothole",
-            "severity": severity,
-            "confidence": float(confidence),
-            "lat": ev_data["lat"],
-            "lng": ev_data["lng"],
-            "timestamp": str(int(time.time()) - random.randint(0, 3600)),
-            "clip_url": f"/temp/dashcam/clip_{str(uuid.uuid4())[:8]}.mp4",
-            "address": ev_data["address"],
-            "sub_area": ev_data["sub_area"],
-            "portal_name": ev_data["portal_name"],
-            "portal_url": ev_data["portal_url"],
-            "userId": user_id
-        }
-        POTHOLE_EVENTS[user_id].append(event)
-
-    total = len(POTHOLE_EVENTS[user_id])
-    print(f"[Test Seed] Injected {len(test_events)} mock events for user {user_id}. Total user events: {total}")
-    return {
-        "message": f"Seeded {len(test_events)} test events for your account",
-        "total_events": total,
-        "expected_clusters": "3 portals: AHMEDABAD_AMC (3 sub-areas), GUJARAT_SWAGAT (2 sub-areas), NHAI (1 sub-area) = 6 clusters total"
-    }
-
-
-@app.post("/api/test/clear_events")
-def clear_test_events(request: Request):
-    """Clears pothole events for the logged-in user only."""
-    user = request.session.get('user')
-    user_id = user.get('sub', 'anonymous') if user else 'anonymous'
-    if user_id in POTHOLE_EVENTS:
-        POTHOLE_EVENTS[user_id].clear()
-    print(f"[Test] Cleared all pothole events for user {user_id}.")
-    return {"message": "All your events cleared", "total_events": 0}
-
-
-class ComplaintRequest(BaseModel):
-    cluster_id: str
-    latitude: float
-    longitude: float
-    road_name: str
-    event_count: int
-    severity: str
-    portal_name: str = "Unknown"
-    portal_url: str = ""
-    sub_area: str = ""
-
-@app.post("/api/reports/generate_complaint")
-def generate_pothole_complaint(req: ComplaintRequest):
-    """
-    Uses Amazon Bedrock (Nova Pro stub) to write a formal draft.
-    """
-    print(f"[Bedrock] Generating structured complaint for cluster {req.cluster_id}")
-    print(f"[Bedrock] Portal: {req.portal_name} ({req.portal_url}) | Sub-area: {req.sub_area}")
-    time.sleep(1.5)
-    
-    authority = req.portal_name if req.portal_name != "Unknown" else (
-        "Municipal Corporation" if "Road" in req.road_name else "NHAI"
-    )
-    
-    draft_text = (
-        f"To the concerned {authority},\n\n"
-        f"This is an automated citizen alert regarding severe road damage.\n"
-        f"Location: {req.sub_area or req.road_name} (GPS: {req.latitude}, {req.longitude})\n"
-        f"Severity: {req.severity.upper()}\n"
-        f"Observations: Over {req.event_count} separate dashcam events have recorded deep potholes in this exact area over the last 48 hours.\n\n"
-        f"We kindly request an immediate inspection and repair of this section to prevent potential accidents.\n\n"
-        f"Evidence clips are available upon request via the Sewa Sahayak portal.\n"
-        f"Filing Portal: {req.portal_url}"
-    )
-    
-    return {
-        "complaint_id": str(uuid.uuid4()),
-        "generated_draft": draft_text,
-        "suggested_authority": authority,
-        "portal_url": req.portal_url,
-        "status": "ready_for_review"
-    }
-
-# Optional: serve public files like images/icons if they exist in dist root
-@app.get("/{file_name:path}")
-async def serve_static_root(file_name: str):
-    if file_name.startswith("api/"):
-        return
-    
-    file_path = os.path.join("../dist", file_name)
-    if os.path.isfile(file_path):
-        return FileResponse(file_path)
-    
-    # SPA fallback: Serve index.html for unknown routes
-    return FileResponse("../dist/index.html")
-
+    @app.get("/{file_name:path}")
+    async def serve_static_root(file_name: str):
+        if file_name.startswith("api/"):
+            return
+        file_path = os.path.join(os.path.dirname(__file__), "..", "dist", file_name)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(os.path.join(os.path.dirname(__file__), "..", "dist", "index.html"))
