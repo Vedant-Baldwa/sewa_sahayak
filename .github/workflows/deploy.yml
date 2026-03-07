@@ -30,13 +30,16 @@ jobs:
         HOST: ${{ secrets.EC2_HOST }}
         USER: ${{ secrets.EC2_USER }}
       run: |
+        # Sanitize HOST just in case user pasted "http://65.x.x.x"
+        CLEAN_HOST=$(echo "$HOST" | sed 's|^http[s]*://||')
+        
         mkdir -p ~/.ssh
-        echo "$SSH_KEY" > ~/.ssh/deploy_key
+        echo "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
         chmod 600 ~/.ssh/deploy_key
-        ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+        ssh-keyscan -H "$CLEAN_HOST" >> ~/.ssh/known_hosts
         
         # Rsync the entire repository (excluding git/node_modules) and the built dist folder
-        rsync -avz --delete --exclude='.git' --exclude='node_modules' --exclude='.env' --exclude='*.pem' -e "ssh -i ~/.ssh/deploy_key" ./ $USER@$HOST:/var/www/sewa_sahayak/
+        rsync -avz --delete --exclude='.git' --exclude='node_modules' --exclude='.env' --exclude='*.pem' -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" ./ $USER@$CLEAN_HOST:/var/www/sewa_sahayak/
 
     - name: Restart Backend & Nginx on EC2
       env:
@@ -44,7 +47,8 @@ jobs:
         HOST: ${{ secrets.EC2_HOST }}
         USER: ${{ secrets.EC2_USER }}
       run: |
-        ssh -i ~/.ssh/deploy_key $USER@$HOST << 'EOF'
+        CLEAN_HOST=$(echo "$HOST" | sed 's|^http[s]*://||')
+        ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key $USER@$CLEAN_HOST << 'EOF'
           cd /var/www/sewa_sahayak/backend
           
           # Install dependencies securely in venv
