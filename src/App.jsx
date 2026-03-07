@@ -1,3 +1,19 @@
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useOnlineStatus } from './hooks/useOnlineStatus';
+import { getUnsyncedMedia, markMediaAsSynced, saveMediaLocally } from './utils/db';
+import { uploadEvidenceToS3, saveReportToDynamoDB, sendPushNotification } from './services/tracking';
+
+// Components & Pages
+import Navbar from './components/Navbar';
+import Auth from './components/Auth';
+import OnlineIndicator from './components/OnlineIndicator';
+
+// New Pages
+import Home from './pages/Home';
+import DashcamPage from './pages/DashcamPage';
+import MapPage from './pages/MapPage';
+import ProfilePage from './pages/ProfilePage';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import OnlineIndicator from './components/OnlineIndicator';
 import AudioRecorder from './components/AudioRecorder';
@@ -36,47 +52,9 @@ function App() {
   // ── Core capture state (unchanged from original) ──────────────────────────
   const [captures, setCaptures] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isRedacting, setIsRedacting] = useState(false);
-  const [isLocating, setIsLocating] = useState(false);
-  const [locationError, setLocationError] = useState(null);
-  const [pendingCapture, setPendingCapture] = useState(null);
-  const [manualLocationInput, setManualLocationInput] = useState('');
-  const [selectedCaptureForDraft, setSelectedCaptureForDraft] = useState(null);
-  const [activeSubmissionDraft, setActiveSubmissionDraft] = useState(null);
-
-  // ── Auth & UI state ───────────────────────────────────────────────────────
   const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [authMode, setAuthMode] = useState('signin');
-  const [showAuth, setShowAuth] = useState(false);
-  const [activeView, setActiveView] = useState('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [notification, setNotification] = useState(null);
-  const [globalTheme, setGlobalTheme] = useState(() => localStorage.getItem('sahayak_global_theme') || 'dark');
-  const [currentLang, setCurrentLang] = useState('en');
-  const [chatbotOpen, setChatbotOpen] = useState(false);
 
-  useEffect(() => {
-    // Sync language from cookie on mount
-    const cookie = document.cookie.split('; ').find(r => r.trim().startsWith('googtrans='));
-    if (cookie) {
-      const lang = cookie.split('/').pop();
-      if (lang) setCurrentLang(lang);
-    }
-
-    const handleLang = (e) => setCurrentLang(e.detail);
-    window.addEventListener('languageChanged', handleLang);
-    return () => window.removeEventListener('languageChanged', handleLang);
-  }, []);
-
-  // ── Refs ──────────────────────────────────────────────────────────────────
-  const photoInputRef = useRef(null);
-  const videoInputRef = useRef(null);
-  const heroRef = useRef(null);
-  const tiltRef = useRef(null);
-
+  // Sync effect & Session Check
   useEffect(() => {
     document.body.className = `theme-${globalTheme}`;
     localStorage.setItem('sahayak_global_theme', globalTheme);
@@ -93,8 +71,6 @@ function App() {
     setShowAuth(true);
   };
 
-  // ── Auth check on mount ───────────────────────────────────────────────────
-  useEffect(() => {
     const checkSession = async () => {
       try {
         const res = await fetch(`${BACKEND_URL}/api/auth/me`, { credentials: 'include' });
@@ -102,10 +78,8 @@ function App() {
           const data = await res.json();
           setUser({ ...data.user, userData: data.userData, token: data.token });
         }
-      } catch {
-        console.warn('No active session.');
-      } finally {
-        setAuthLoading(false);
+      } catch (err) {
+        console.warn("No active session.");
       }
     };
     checkSession();
@@ -127,17 +101,14 @@ function App() {
         console.log(`Syncing ${unsynced.length} offline captures...`);
         for (const item of unsynced) {
           try {
-            // Generate a dummy ticketId for offline synced draft
-            let prefix = 'TKT';
-            if (item.jurisdiction && item.jurisdiction.portal_name) {
-              prefix = item.jurisdiction.portal_name.substring(0, 3).toUpperCase();
-            }
-            const offlineTicketId = `${prefix}-OFFLINE-${Math.floor(Math.random() * 10000)}`;
-
-            // Only sync if there is a blob
+            const offlineTicketId = `BMC-OFFLINE-${Math.floor(Math.random() * 10000)}`;
             if (item.blob) {
               await uploadEvidenceToS3(item.blob, offlineTicketId);
-              const draftData = { jurisdiction: item.jurisdiction || 'Unknown', damageType: 'Offline Submission', severity: 'Unknown' };
+              const draftData = {
+                jurisdiction: item.jurisdiction || 'Unknown',
+                damageType: 'Offline Submission',
+                severity: 'Unknown'
+              };
               await saveReportToDynamoDB(offlineTicketId, draftData, item.id);
               await markMediaAsSynced(item.id);
             } else {
@@ -157,64 +128,18 @@ function App() {
     }
   };
 
-  // ── Logout ────────────────────────────────────────────────────────────────
   const handleLogout = async () => {
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
     try {
-      await fetch(`${BACKEND_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' });
-    } catch { /* ignore */ }
-    setUser(null);
-    setCaptures([]);
-    setActiveView('dashboard');
-    setSidebarOpen(false);
-  };
-
-  // ── Media pipeline (identical to original) ────────────────────────────────
-  const handleMediaCapture = async (blob, type, additionalMetaData = {}) => {
-    if (!blob) return;
-    const previewUrl = URL.createObjectURL(blob);
-    const timestamp = Date.now();
-    setIsLocating(true);
-    let locationData = null;
-    let jurisdiction = null;
-    try {
-      locationData = await getDeviceLocation();
-      const routeRes = await fetch(`${BACKEND_URL}/api/route`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ lat: locationData.lat, lng: locationData.lng })
-      });
-      if (!routeRes.ok) throw new Error("Failed to dynamically route location");
-      const routeData = await routeRes.json();
-
-      jurisdiction = {
-        ...routeData.routing,
-        jurisdiction_level: routeData.routing?.portal_name === 'CPGRAMS' ? 'Central' : 'Local/State',
-        ward_district: routeData.structured_address ? (routeData.structured_address.District || routeData.structured_address.City || "Mapped Region") : "Mapped Region",
-        mapped_coordinates: { lat: locationData.lat, lng: locationData.lng }
-      };
-      locationData.address = routeData.structured_address?.Address || '';
-
-      // Ensure form_schema successfully fetched by Nova Act is bundled into metadata for the draft
-      additionalMetaData.formSchema = routeData.form_schema;
-
-      // If success, proceed to save directly
-      await finalizeCapture({
-        blob, type, previewUrl, timestamp, jurisdiction, locationData, additionalMetaData
-      });
+      await fetch(`${BACKEND_URL}/api/auth/logout`, { method: "POST", credentials: "include" });
+      setUser(null);
     } catch (err) {
-      console.warn('Location capture failed, requesting manual entry', err);
-      setPendingCapture({ blob, type, previewUrl, timestamp, additionalMetaData });
-      setLocationError("We couldn't reach your device GPS. Please enter the location manually.");
-    } finally {
-      setIsLocating(false);
+      console.error("Logout failed", err);
     }
   };
 
-  const submitManualLocation = async () => {
-    try {
-      if (!manualLocationInput.trim()) return;
 
+<<<<<<< HEAD
       const routeRes = await fetch(`${BACKEND_URL}/api/route`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -478,463 +403,43 @@ function App() {
   }
 
   // ── MAIN DASHBOARD ────────────────────────────────────────────────────────
+=======
+  // Main UI
+>>>>>>> 711e76874574420a4a052df8f022d7b549e08ffd
   return (
-    <AppShell
-      user={user} onLogout={handleLogout} activeView={activeView} setActiveView={setActiveView}
-      sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} notification={notification}
-      chatbotOpen={chatbotOpen} setChatbotOpen={setChatbotOpen}
-      globalTheme={globalTheme} setGlobalTheme={setGlobalTheme}
-    >
-      {/* Hidden inputs for camera */}
-      <input type="file" accept="image/*" capture="environment" ref={photoInputRef} onChange={onPhotoSelect} style={{ display: 'none' }} />
-      <input type="file" accept="video/*" capture="environment" ref={videoInputRef} onChange={onVideoSelect} style={{ display: 'none' }} />
+    <Router>
+      <div className="app-layout">
+        <Navbar user={user} onLogout={handleLogout} />
 
-      <div style={{ maxWidth: 1200, margin: '0 auto', width: '100%', position: 'relative' }}>
+        <main className="app-content">
+          <Routes>
+            <Route path="/" element={<Home user={user} />} />
 
-        {/* Welcome Header */}
-        <div style={{ marginBottom: '3rem', animation: 'fadeUp 0.6s ease' }}>
-          <h1 style={{ fontSize: '2.5rem', fontWeight: 900, letterSpacing: '-0.04em', marginBottom: '0.5rem' }}>
-            Hello, <span style={{ background: 'linear-gradient(135deg, var(--primary), var(--secondary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{user?.userData?.fullName || user?.userData?.name || user?.name || user?.email?.split('@')[0]}</span>
-          </h1>
-          <p style={{ color: 'var(--muted)', fontSize: '1.1rem' }}>What would you like to do today?</p>
-        </div>
+            <Route path="/login" element={
+              user ? <Navigate to="/dashboard" /> : <Auth onLogin={setUser} />
+            } />
 
-        {/* Services Flashcards Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '4rem' }}>
+            <Route path="/dashcam" element={
+              user ? <DashcamPage /> : <Navigate to="/login" />
+            } />
 
-          {/* Card 1: Photo Report */}
-          <div className="flashcard" onClick={() => photoInputRef.current.click()} style={{
-            background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.15)',
-            borderRadius: 32, padding: '2.25rem', cursor: 'pointer', transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            position: 'relative', overflow: 'hidden'
-          }}>
-            <div className="card-glow" style={{ position: 'absolute', top: '-20%', right: '-20%', width: '60%', height: '60%', background: 'radial-gradient(circle, rgba(239,68,68,0.2) 0%, transparent 70%)', pointerEvents: 'none' }} />
-            <div style={{ width: 56, height: 56, borderRadius: 18, background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1.5rem', boxShadow: '0 10px 20px rgba(239,68,68,0.3)' }}>
-              <Camera size={26} color="white" />
-            </div>
-            <h3 style={{ fontSize: '1.35rem', fontWeight: 800, marginBottom: '0.75rem' }}>Report a Problem</h3>
-            <p style={{ color: 'var(--muted)', lineHeight: 1.5, fontSize: '0.88rem' }}>Capture a photo. Our AI identifies the issue and files it automatically.</p>
-            <div style={{ marginTop: '2rem', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: 'var(--primary)', fontSize: '0.85rem' }}>
-              Photo Report <ArrowRight size={16} />
-            </div>
-          </div>
+            <Route path="/dashboard" element={
+              user ? <MapPage /> : <Navigate to="/login" />
+            } />
 
-          {/* Card 2: Video Report */}
-          <div className="flashcard" onClick={() => videoInputRef.current.click()} style={{
-            background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.15)',
-            borderRadius: 32, padding: '2.25rem', cursor: 'pointer', transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            position: 'relative', overflow: 'hidden'
-          }}>
-            <div className="card-glow" style={{ position: 'absolute', top: '-10%', right: '10%', width: '60%', height: '60%', background: 'radial-gradient(circle, rgba(16,185,129,0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
-            <div style={{ width: 56, height: 56, borderRadius: 18, background: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1.5rem', boxShadow: '0 10px 20px rgba(16,185,129,0.3)' }}>
-              <Video size={26} color="white" />
-            </div>
-            <h3 style={{ fontSize: '1.35rem', fontWeight: 800, marginBottom: '0.75rem' }}>Full Video Log</h3>
-            <p style={{ color: 'var(--muted)', lineHeight: 1.5, fontSize: '0.88rem' }}>Record a detailed walkaround of the damage for large-scale civic issues.</p>
-            <div style={{ marginTop: '2rem', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: 'var(--success)', fontSize: '0.85rem' }}>
-              Record Video <ArrowRight size={16} />
-            </div>
-          </div>
+            <Route path="/profile" element={
+              user ? <ProfilePage user={user} /> : <Navigate to="/login" />
+            } />
 
-          {/* Card 3: Voice Reporter */}
-          <div
-            className="flashcard"
-            style={{
-              background: 'rgba(245, 158, 11, 0.05)', border: '1px solid rgba(245, 158, 11, 0.15)',
-              borderRadius: 32, padding: '2.25rem', transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              position: 'relative', overflow: 'hidden'
-            }}>
-            <div className={`card-glow`} style={{ position: 'absolute', top: '10%', right: '-10%', width: '60%', height: '60%', background: 'radial-gradient(circle, rgba(245,158,11,0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
-            <div style={{ width: 56, height: 56, borderRadius: 18, background: 'var(--warning)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1.5rem', boxShadow: '0 10px 20px rgba(245,158,11,0.3)' }}>
-              <Phone size={26} color="white" />
-            </div>
-            <h3 style={{ fontSize: '1.35rem', fontWeight: 800, marginBottom: '0.75rem' }}>Voice Assistant</h3>
-            <p style={{ color: 'var(--muted)', lineHeight: 1.5, fontSize: '0.88rem' }}>Tap below to record your voice. We automatically transcribe and file the complaint for you.</p>
-            <div style={{ marginTop: '1.25rem' }}>
-              <AudioRecorder onRecordingComplete={onAudioRecorded} />
-            </div>
-          </div>
-
-          {/* Card 4: AI Sahayak */}
-          <div className="flashcard" onClick={() => setChatbotOpen(v => !v)} style={{
-            background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.15)',
-            borderRadius: 32, padding: '2.25rem', cursor: 'pointer', transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            position: 'relative', overflow: 'hidden'
-          }}>
-            <div className="card-glow" style={{ position: 'absolute', bottom: '-20%', left: '-20%', width: '60%', height: '60%', background: 'radial-gradient(circle, rgba(99,102,241,0.2) 0%, transparent 70%)', pointerEvents: 'none' }} />
-            <div style={{ width: 56, height: 56, borderRadius: 18, background: 'var(--secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1.5rem', boxShadow: '0 10px 20px rgba(99,102,241,0.3)' }}>
-              <Bot size={26} color="white" />
-            </div>
-            <h3 style={{ fontSize: '1.35rem', fontWeight: 800, marginBottom: '0.75rem' }}>Help & AI Chat</h3>
-            <p style={{ color: 'var(--muted)', lineHeight: 1.5, fontSize: '0.88rem' }}>Ask our AI about government rules, portal status, or reporting tips.</p>
-            <div style={{ marginTop: '2rem', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: 'var(--secondary)', fontSize: '0.85rem' }}>
-              Open Support <ArrowRight size={16} />
-            </div>
-          </div>
-
-          {/* Card 5: Track Reports */}
-          <div className="flashcard" onClick={() => setActiveView('reports')} style={{
-            background: 'rgba(52, 211, 153, 0.05)', border: '1px solid rgba(52, 211, 153, 0.15)',
-            borderRadius: 32, padding: '2.25rem', cursor: 'pointer', transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            position: 'relative', overflow: 'hidden'
-          }}>
-            <div className="card-glow" style={{ position: 'absolute', top: '-20%', right: '-20%', width: '60%', height: '60%', background: 'radial-gradient(circle, rgba(52,211,153,0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
-            <div style={{ width: 56, height: 56, borderRadius: 18, background: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1.5rem', boxShadow: '0 10px 20px rgba(52,211,153,0.3)' }}>
-              <FileText size={26} color="white" />
-            </div>
-            <h3 style={{ fontSize: '1.35rem', fontWeight: 800, marginBottom: '0.75rem' }}>View History</h3>
-            <p style={{ color: 'var(--muted)', lineHeight: 1.5, fontSize: '0.88rem' }}>Check status, portal tracking IDs, and AI analysis for your past reports.</p>
-            <div style={{ marginTop: '2rem', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: 'var(--success)', fontSize: '0.85rem' }}>
-              See My Impact <ArrowRight size={16} />
-            </div>
-          </div>
-        </div>
-
-        {/* Ongoing Evidence Section */}
-        {captures.length > 0 && (
-          <div style={{ animation: 'fadeUp 0.8s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2 style={{ fontWeight: 800, fontSize: '1.5rem' }}>Active Drafts</h2>
-              {isSyncing && (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 600 }}>
-                  <RefreshCw size={14} className="spin" /> Syncing to AWS…
-                </span>
-              )}
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '1.5rem' }}>
-              {captures.map(capture => (
-                <CaptureCard key={capture.id} capture={capture} onDraft={() => setSelectedCaptureForDraft(capture)} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Processing Overlays */}
-        {(isTranscribing || isRedacting || isAnalyzing || isLocating) && (
-          <div style={{
-            position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
-          }}>
-            <div style={{
-              background: 'rgba(20,20,25,0.9)', border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 24, padding: '2rem', width: '90%', maxWidth: 400,
-              boxShadow: '0 30px 60px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', gap: 16
-            }}>
-              <h3 style={{ textAlign: 'center', marginBottom: 8, fontSize: '1.2rem', fontWeight: 800 }}>Processing Intelligence</h3>
-              {isTranscribing && <StatusBadge color="var(--primary)" icon={<RefreshCw size={18} className="spin" />} text="Transcribing Audio..." />}
-              {isRedacting && <StatusBadge color="var(--success)" icon={<Shield size={18} className="pulse" />} text="Rekognition Redaction..." />}
-              {isAnalyzing && <StatusBadge color="var(--secondary)" icon={<RefreshCw size={18} className="spin" />} text="Bedrock Analysis..." />}
-              {isLocating && <StatusBadge color="var(--muted)" icon={<MapPin size={18} className="pulse" />} text="Routing Jurisdiction..." />}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <style>{`
-        .flashcard {
-          backdrop-filter: blur(20px);
-          box-shadow: 0 10px 40px rgba(0,0,0,0.3), inset 0 1px 1px rgba(255,255,255,0.05);
-        }
-        .flashcard:hover {
-          transform: translateY(-12px) scale(1.03);
-          border-color: rgba(255,255,255,0.25) !important;
-          background: rgba(255,255,255,0.08) !important;
-          box-shadow: 0 60px 100px rgba(0,0,0,0.6);
-        }
-        .flashcard:active {
-          transform: translateY(-4px) scale(0.98);
-        }
-        @keyframes floatMini {
-            0%, 100% { transform: translateY(0) rotate(15deg); }
-            50% { transform: translateY(-30px) rotate(20deg); }
-        }
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-    </AppShell>
-  );
-}
-
-function AppShell({
-  children, user, onLogout, activeView, setActiveView, sidebarOpen, setSidebarOpen,
-  notification, chatbotOpen, setChatbotOpen, globalTheme, setGlobalTheme
-}) {
-  const displayName = user?.userData?.fullName || user?.userData?.name || user?.name || user?.email?.split('@')[0] || 'User';
-  const email = user?.email || '';
-
-  return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', position: 'relative', overflowX: 'hidden' }}>
-
-      {/* ── Premium Background Visuals ─── */}
-      <div style={{ position: 'fixed', top: '10%', left: '-5%', width: 500, height: 500, background: 'radial-gradient(circle, rgba(59,130,246,0.05) 0%, transparent 70%)', borderRadius: '50%', pointerEvents: 'none', zIndex: 0 }} />
-      <div style={{ position: 'fixed', bottom: '5%', right: '-5%', width: 400, height: 400, background: 'radial-gradient(circle, rgba(139,92,246,0.05) 0%, transparent 70%)', borderRadius: '50%', pointerEvents: 'none', zIndex: 0 }} />
-      <div style={{ position: 'fixed', inset: 0, backgroundImage: 'radial-gradient(rgba(255,255,255,0.01) 1px, transparent 1px)', backgroundSize: '40px 40px', pointerEvents: 'none', zIndex: 0 }} />
-
-      {/* ── Floating 3D Icons in Dashboard ─── */}
-      <div style={{ position: 'fixed', top: '20%', right: '10%', opacity: 0.1, transform: 'rotate(15deg)', zIndex: 0, animation: 'floatMini 10s ease-in-out infinite' }}><Shield size={60} color="var(--primary)" /></div>
-      <div style={{ position: 'fixed', bottom: '20%', left: '5%', opacity: 0.1, transform: 'rotate(-10deg)', zIndex: 0, animation: 'floatMini 12s ease-in-out 2s infinite' }}><Bot size={50} color="var(--secondary)" /></div>
-
-      {/* ── Top notification bar ─── */}
-      {notification && (
-        <div style={{
-          position: 'fixed', top: 16, right: 16, zIndex: 9999,
-          background: notification.type === 'error' ? 'rgba(244,63,94,0.15)' : 'rgba(0,250,154,0.1)',
-          border: `1px solid ${notification.type === 'error' ? 'rgba(244,63,94,0.4)' : 'rgba(0,250,154,0.3)'}`,
-          borderRadius: 16, padding: '1rem 1.5rem', color: 'white',
-          backdropFilter: 'blur(20px)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-          fontSize: '0.88rem', fontWeight: 600, maxWidth: 380,
-          animation: 'slideInRight 0.3s ease',
-        }}>
-          {notification.msg}
-        </div>
-      )}
-
-      {/* ── Header ─── */}
-      <header style={{
-        position: 'sticky', top: 0, zIndex: 200,
-        background: 'rgba(5,5,5,0.85)', backdropFilter: 'blur(20px)',
-        borderBottom: '1px solid var(--border-bright)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 1.5rem', height: 64,
-      }}>
-        {/* Left: brand + hamburger */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <button onClick={() => setSidebarOpen(v => !v)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--muted)', display: 'flex', padding: 6 }}>
-            {sidebarOpen ? <XIcon size={20} /> : <Menu size={20} />}
-          </button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 32, height: 32, background: 'linear-gradient(135deg,var(--primary),var(--secondary))', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 6px 0 var(--primary-dark)' }}>
-              <Shield size={16} color="white" />
-            </div>
-            <span style={{ fontWeight: 900, fontSize: '1rem', letterSpacing: '-0.02em' }}>Sewa Sahayak</span>
-          </div>
-        </div>
-
-        {/* Right: tools + online + avatar */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <LanguageSelector />
-
-          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-bright)', borderRadius: 14, padding: 4, gap: 4 }}>
-            <button
-              onClick={() => setGlobalTheme(t => t === 'dark' ? 'light' : 'dark')}
-              style={{ background: 'transparent', border: 'none', color: 'var(--muted)', width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: '0.2s' }}
-              title="Toggle Day/Night Mode"
-            >
-              {globalTheme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
-            </button>
-            <button
-              onClick={() => setChatbotOpen(v => !v)}
-              style={{ background: chatbotOpen ? 'rgba(var(--primary-rgb), 0.1)' : 'transparent', border: 'none', color: chatbotOpen ? 'var(--primary)' : 'var(--muted)', width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: '0.2s' }}
-              title="Toggle AI Sahayak"
-            >
-              <Bot size={18} />
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-bright)', borderRadius: 14, padding: '6px 14px' }}>
-            <UserCircle size={18} color="var(--primary)" />
-            <span style={{ fontSize: '0.82rem', fontWeight: 600, maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</span>
-          </div>
-        </div>
-      </header>
-
-      {/* ── Layout ─── */}
-      <div style={{ display: 'flex', flex: 1, position: 'relative' }}>
-
-        {/* Sidebar */}
-        <aside style={{
-          width: sidebarOpen ? 260 : 0,
-          overflow: 'hidden',
-          transition: 'width 0.3s cubic-bezier(0.4,0,0.2,1)',
-          background: 'rgba(8,8,10,0.95)', backdropFilter: 'blur(20px)',
-          borderRight: '1px solid var(--border)',
-          display: 'flex', flexDirection: 'column',
-          position: 'sticky', top: 64, height: 'calc(100vh - 64px)',
-        }}>
-          <div style={{ padding: '1.5rem 1.25rem', flex: 1, overflowY: 'auto' }}>
-            {/* User card */}
-            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-bright)', borderRadius: 16, padding: '1rem', marginBottom: '1.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 12, background: 'linear-gradient(135deg,var(--primary),var(--secondary))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ color: 'white', fontWeight: 900, fontSize: '1rem' }}>{displayName[0]?.toUpperCase()}</span>
-                </div>
-                <div>
-                  <p style={{ fontWeight: 800, fontSize: '0.88rem', lineHeight: 1.2 }}>{displayName}</p>
-                  <p style={{ color: 'var(--muted)', fontSize: '0.7rem', opacity: 0.5 }}>{email}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Nav items */}
-            <nav style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {[
-                { key: 'dashboard', icon: <Home size={18} />, label: 'Home' },
-                { key: 'reports', icon: <History size={18} />, label: 'Reports' },
-                { key: 'profile', icon: <UserCircle size={18} />, label: 'Profile' },
-              ].map(item => (
-                <button
-                  key={item.key}
-                  onClick={() => { setActiveView(item.key); setSidebarOpen(false); }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 14, padding: '0.9rem 1.25rem',
-                    borderRadius: 18, border: 'none', cursor: 'pointer', fontWeight: 800, fontSize: '0.9rem',
-                    background: activeView === item.key ? 'rgba(239,68,68,0.1)' : 'transparent',
-                    color: activeView === item.key ? 'var(--primary)' : 'rgba(255,255,255,0.4)',
-                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                    textAlign: 'left',
-                    boxShadow: activeView === item.key ? 'inset 0 1px 1px rgba(255,255,255,0.05)' : 'none'
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = activeView === item.key ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.03)'}
-                  onMouseLeave={e => e.currentTarget.style.background = activeView === item.key ? 'rgba(239,68,68,0.1)' : 'transparent'}
-                >
-                  {item.icon} {item.label}
-                </button>
-              ))}
-            </nav>
-          </div>
-
-          {/* Logout */}
-          <div style={{ padding: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(0,0,0,0.2)' }}>
-            <button
-              onClick={onLogout}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 12, width: '100%',
-                padding: '1rem', borderRadius: 20, border: '1px solid rgba(244,63,94,0.15)',
-                cursor: 'pointer', background: 'rgba(244,63,94,0.05)', color: '#f43f5e',
-                fontWeight: 800, fontSize: '0.9rem', transition: 'all 0.3s',
-                boxShadow: '0 10px 20px rgba(0,0,0,0.2)'
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#f43f5e'; e.currentTarget.style.color = 'white'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(244,63,94,0.05)'; e.currentTarget.style.color = '#f43f5e'; }}
-            >
-              <LogOut size={18} /> Sign Out
-            </button>
-          </div>
-        </aside>
-
-        {/* Main content */}
-        <main style={{ flex: 1, padding: '2rem 1.5rem', maxWidth: 700, margin: '0 auto', width: '100%' }}>
-          {children}
+          </Routes>
         </main>
+
+        {/* Persistent Online Indicator */}
+        <div className="fixed bottom-4 right-4 z-50">
+          <OnlineIndicator />
+        </div>
       </div>
-
-      {user && (
-        <AIChatbot
-          userAuthenticated={!!user}
-          isOpen={chatbotOpen}
-          onToggle={(val) => {
-            if (typeof val === 'function') {
-              setChatbotOpen(val);
-            } else if (val !== undefined) {
-              setChatbotOpen(val);
-            } else {
-              setChatbotOpen(!chatbotOpen);
-            }
-          }}
-        />
-      )}
-
-      <style>{`
-        .spin  { animation: spin  1s linear infinite; }
-        .pulse { animation: pulse 1.5s ease-in-out infinite; }
-        @keyframes spin  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
-        @keyframes slideInRight { from { opacity:0; transform: translateX(30px); } to { opacity:1; transform: translateX(0); } }
-        .input-field {
-          background: rgba(255,255,255,0.04); border: 1px solid var(--border-bright);
-          color: var(--text); border-radius: 12px; padding: 0.75rem 1rem; font-size: 0.9rem;
-          outline: none; transition: 0.2s; font-family: 'Outfit', sans-serif;
-        }
-        .input-field:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(229,9,20,0.1); }
-      `}</style>
-    </div>
-  );
-}
-
-// ─────────────────────────── Status Badge ─────────────────────────────────────
-function StatusBadge({ color, icon, text }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: '1.25rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 12, padding: '0.85rem 1.25rem' }}>
-      <span style={{ color, flexShrink: 0 }}>{icon}</span>
-      <p style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--muted)' }}>{text}</p>
-    </div>
-  );
-}
-
-// ─────────────────────────── Capture Card ─────────────────────────────────────
-function CaptureCard({ capture, onDraft }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', padding: '1rem', borderRadius: 16, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
-      {/* Thumbnail */}
-      <div style={{ width: 64, height: 64, borderRadius: 12, overflow: 'hidden', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        {capture.type === 'image' && <img src={capture.previewUrl} alt="evidence" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-        {capture.type === 'video' && <video src={capture.previewUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted />}
-        {capture.type === 'audio' && <audio src={capture.previewUrl} controls style={{ width: 120, transform: 'scale(0.7)' }} />}
-      </div>
-
-      {/* Info */}
-      <div style={{ flex: 1 }}>
-        <p style={{ fontWeight: 700, textTransform: 'capitalize', fontSize: '0.9rem', marginBottom: 2 }}>{capture.type} Capture</p>
-        <p style={{ fontSize: '0.72rem', color: 'var(--muted)', marginBottom: 8 }}>{new Date(capture.timestamp).toLocaleTimeString()}</p>
-
-        {capture.analysis && (
-          <div style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.15)', borderRadius: 10, padding: '8px 10px', marginBottom: 8 }}>
-            <p style={{ fontSize: '0.78rem', color: 'var(--muted)', marginBottom: 4, fontStyle: 'italic' }}>{capture.analysis.suggested_description}</p>
-            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-              <Tag color="var(--secondary)">{capture.analysis.damage_type}</Tag>
-              <Tag color="var(--danger)">Severity: {capture.analysis.severity}</Tag>
-              <Tag color="var(--success)">AI: {(capture.analysis.confidence_score * 100).toFixed(0)}%</Tag>
-            </div>
-          </div>
-        )}
-
-        {capture.transcription && (
-          <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: 10, padding: '8px 10px', marginBottom: 8 }}>
-            <p style={{ fontSize: '0.78rem', fontStyle: 'italic', color: 'var(--muted)' }}>"{capture.transcription.transcript}"</p>
-          </div>
-        )}
-
-        {capture.redaction && (capture.redaction.faces > 0 || capture.redaction.plates > 0) && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <Shield size={13} color="var(--success)" />
-            <span style={{ fontSize: '0.72rem', color: 'var(--success)', fontWeight: 700 }}>
-              PII Redacted: {capture.redaction.faces} faces, {capture.redaction.plates} plates
-            </span>
-          </div>
-        )}
-
-        {capture.jurisdiction && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
-            <MapPin size={13} color="var(--muted)" />
-            <span style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>
-              {capture.jurisdiction.portal_name} · {capture.jurisdiction.ward_district}
-            </span>
-          </div>
-        )}
-
-        <button className="btn btn-primary" style={{ width: '100%', padding: '0.6rem 1rem', fontSize: '0.85rem' }} onClick={onDraft}>
-          <FileText size={15} /> Generate Official Report
-        </button>
-      </div>
-
-      {/* Sync badge */}
-      <div style={{ flexShrink: 0 }}>
-        {capture.synced
-          ? <CheckCircle size={18} color="var(--success)" />
-          : <RefreshCw size={18} color="var(--muted)" />}
-      </div>
-    </div>
-  );
-}
-
-function Tag({ color, children }) {
-  return (
-    <span style={{ fontSize: '0.68rem', background: `${color}22`, color, border: `1px solid ${color}44`, padding: '2px 8px', borderRadius: 6, fontWeight: 700 }}>
-      {children}
-    </span>
+    </Router>
   );
 }
 

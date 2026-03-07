@@ -164,21 +164,20 @@ export default function Auth({ mode, onToggleMode, onClose }) {
                 </div>
             </div>
 
-            <style>{`
-                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-                @keyframes modalIn { from { opacity: 0; transform: scale(0.9) translateY(40px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-                @keyframes pulsGlow { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.1); } }
-                @keyframes shine { 0%,60% { left: -100%; } 100% { left: 220%; } }
-                @keyframes shake {
-                    0%, 100% { transform: translateX(0); }
-                    15% { transform: translateX(-8px); }
-                    30% { transform: translateX(8px); }
-                    45% { transform: translateX(-6px); }
-                    60% { transform: translateX(6px); }
-                    75% { transform: translateX(-3px); }
-                    90% { transform: translateX(3px); }
-                }
-            `}</style>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <button onClick={handleLogin} className="btn btn-primary" style={{ width: '100%' }}>
+                    <LogIn size={20} />
+                    Login with Sewa Sahayak
+                </button>
+                <button
+                    onClick={() => { window.location.href = `${BACKEND_URL}/login/google`; }}
+                    className="btn"
+                    style={{ width: '100%', backgroundColor: 'white', color: '#757575', border: '1px solid #ddd', fontWeight: 'bold' }}
+                >
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" style={{ width: '20px', height: '20px', marginRight: '8px' }} />
+                    Sign in with Google
+                </button>
+            </div>
         </div>
     );
 }
