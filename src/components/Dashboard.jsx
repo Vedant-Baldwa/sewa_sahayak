@@ -152,19 +152,15 @@ const Dashboard = () => {
             {Object.keys(portalGroups).length > 0 && (
                 <div style={{ padding: '0 1rem', overflowX: 'auto', display: 'flex', gap: '0.5rem' }}>
                     {Object.values(portalGroups).map((group, idx) => (
-                        <div key={idx}
-                            onClick={() => setSelectedCluster(group.clusters[0])}
-                            style={{
-                                minWidth: '180px',
-                                background: 'linear-gradient(135deg, rgba(59,130,246,0.08), rgba(139,92,246,0.08))',
-                                padding: '8px 12px',
-                                borderRadius: '10px',
-                                border: '1px solid rgba(59,130,246,0.15)',
-                                fontSize: '0.78rem',
-                                flexShrink: 0,
-                                cursor: 'pointer',
-                                transition: 'transform 0.2s',
-                            }}>
+                        <div key={idx} style={{
+                            minWidth: '180px',
+                            background: 'linear-gradient(135deg, rgba(59,130,246,0.08), rgba(139,92,246,0.08))',
+                            padding: '8px 12px',
+                            borderRadius: '10px',
+                            border: '1px solid rgba(59,130,246,0.15)',
+                            fontSize: '0.78rem',
+                            flexShrink: 0
+                        }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '700', marginBottom: '4px' }}>
                                 <Globe size={14} />
                                 {group.portal_name}
@@ -226,9 +222,9 @@ const Dashboard = () => {
 
             {/* Cluster Details Panel */}
             {selectedCluster && (
-                <div className="glass-panel" style={{ margin: '0 1rem 1rem', padding: '1rem', animation: 'slideUp 0.3s ease-out', position: 'relative' }}>
+                <div className="glass-panel" style={{ margin: '0 1rem 1rem', padding: '1rem', animation: 'slideUp 0.3s ease-out' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div style={{ paddingRight: '2rem' }}>
+                        <div>
                             <h3 style={{ margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <MapPin size={18} />
                                 {selectedCluster.sub_area || selectedCluster.road_name}
@@ -237,24 +233,17 @@ const Dashboard = () => {
                                 Hotspot ID: {selectedCluster.cluster_id.split('_')[1]}
                             </p>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-                            <button
-                                onClick={() => setSelectedCluster(null)}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                                ✕ Close
-                            </button>
-                            <span style={{
-                                background: getSeverityColor(selectedCluster.severity),
-                                color: 'white',
-                                padding: '4px 10px',
-                                borderRadius: '20px',
-                                fontSize: '0.75rem',
-                                fontWeight: 'bold',
-                                textTransform: 'uppercase'
-                            }}>
-                                {selectedCluster.severity}
-                            </span>
-                        </div>
+                        <span style={{
+                            background: getSeverityColor(selectedCluster.severity),
+                            color: 'white',
+                            padding: '4px 10px',
+                            borderRadius: '20px',
+                            fontSize: '0.75rem',
+                            fontWeight: 'bold',
+                            textTransform: 'uppercase'
+                        }}>
+                            {selectedCluster.severity}
+                        </span>
                     </div>
 
                     {/* Portal Info */}
