@@ -3,19 +3,19 @@ logs
 *.log
 npm-debug.log*
 yarn-debug.log*
+yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# Node.js
-node_modules/
-dist/
-dist-ssr/
+node_modules
+dist
+dist-ssr
 *.local
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea/
+.idea
 .DS_Store
 *.suo
 *.ntvs*
@@ -23,30 +23,18 @@ dist-ssr/
 *.sln
 *.sw?
 
-# Python
-**/__pycache__/
-**/*.py[cod]
-**/*.pyo
-**/*.pyd
-**/venv/
-**/.venv/
-**/env/
-**/.env
-**/temp/
-**/.pytest_cache/
-**/.coverage
-**/htmlcov/
-**/test_output.txt
+# Python Backend
+backend/venv/
+backend/__pycache__/
+backend/.env
 backend/test_audio.mp3
+backend/temp/
 
 # Environment variables (secrets) — never commit these!
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+backend/.env
 
-# Project Specific
-events.json
+# Logs and temp data files
 push.log
 out.log
+events.json

@@ -10,29 +10,34 @@ from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Dep
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
-from fastapi.requests import Request
-from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel
-from core.config import Config
-from api.router import auth, evidence, reports, ai, agentic, chatbot
-from services.aws.amazon_transcribe import (
-    upload_audio_to_s3, 
-    start_transcription_job, 
-    poll_transcription_job, 
-    extract_transcript
-)
-from pydantic import BaseModel as PydanticBase
-import os
-import uuid
+from starlette.middleware.sessions import SessionMiddleware
+from authlib.integrations.starlette_client import OAuth
+from dotenv import load_dotenv
+import mimetypes
 import time
+import uuid
+from aws_services.transcribe import upload_audio_to_s3, start_transcription_job, poll_transcription_job, extract_transcript
+from aws_services.location import reverse_geocode, verify_address
+from aws_services.bedrock import get_portal_routing
+from aws_services.nova_act_scraper import extract_form_fields
+from aws_services.detection_worker import process_video_segment
 import json
+import os
+import traceback
 
-app = FastAPI(title="Sewa Sahayak API - Modular")
+# Load environment variables from .env file
+load_dotenv()
 
-# Middleware
+mimetypes.add_type("application/javascript", ".js")
+mimetypes.add_type("text/css", ".css")
+
+app = FastAPI(title="Sewa Sahayak PWA API (Mock)")
+
+# CORS Middleware to allow requests from the Vite frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[Config.FRONTEND_URL],
+    allow_origin_regex=".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -62,80 +67,6 @@ oauth.register(
 )
 
 @app.get("/api/health")
-def health():
-    return {"status": "running", "version": "2.0.0-modular"}
-
-# ── User state (chat session persistence per user session) ───────────────────
-
-@app.get("/api/user/state")
-async def get_user_state(request: Request):
-    user = request.session.get("user")
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-        
-    uuid_sub = user.get('sub')
-    if users_table and uuid_sub:
-        try:
-            db_response = users_table.get_item(Key={'userId': uuid_sub})
-            item = db_response.get('Item', {})
-            return {
-                "chat_sessions": item.get("chat_sessions", request.session.get("chat_sessions", [])),
-                "activeChatId": item.get("active_chat_id", request.session.get("active_chat_id", None))
-            }
-        except Exception as e:
-            print(f"DynamoDB get state error: {e}")
-
-    return {
-        "chat_sessions": request.session.get("chat_sessions", []),
-        "activeChatId":  request.session.get("active_chat_id", None),
-    }
-
-class ChatStateBody(PydanticBase):
-    sessions: list = []
-    activeChatId: str = ""
-
-@app.post("/api/user/state/chats")
-async def save_user_chats(body: ChatStateBody, request: Request):
-    user = request.session.get("user")
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-        
-    # Trim each session 
-    trimmed = []
-    for s in body.sessions:
-        trimmed.append({**s, "messages": s.get("messages", [])[-30:]})
-        
-    # Try saving to DB first
-    uuid_sub = user.get('sub')
-    if users_table and uuid_sub:
-        try:
-            users_table.update_item(
-                Key={'userId': uuid_sub},
-                UpdateExpression="SET chat_sessions = :cs, active_chat_id = :acid",
-                ExpressionAttributeValues={
-                    ':cs': trimmed,
-                    ':acid': body.activeChatId
-                }
-            )
-        except Exception as e:
-            print(f"DynamoDB save state error: {e}")
-            
-    # And keep in session as backup (though might get dropped if too big)
-    request.session["chat_sessions"]  = trimmed
-    request.session["active_chat_id"] = body.activeChatId
-    return {"saved": True}
-
-# SPA Support (Serve Vite build)
-DIST_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dist")
-if os.path.exists(DIST_DIR):
-    app.mount("/assets", StaticFiles(directory=os.path.join(DIST_DIR, "assets")), name="assets")
-    
-    @app.get("/{file_path:path}")
-    async def serve_spa(file_path: str):
-        if file_path.startswith("api/"): return
-        full_path = os.path.join(DIST_DIR, file_path)
-        if os.path.isfile(full_path): return FileResponse(full_path)
-        return FileResponse(os.path.join(DIST_DIR, "index.html"))
 def read_root():
     return {"message": "Sewa Sahayak AWS API Running"}
 
@@ -773,22 +704,50 @@ except Exception:
 
 # Feature 5 Endpoint: Cognitive Dispatcher
 @app.post("/api/route")
-def route_complaint_endpoint(route_req: RouteRequest):
+def route_complaint(route_req: RouteRequest):
     print(f"[Cognitive Dispatcher] Processing routing request: {route_req}")
+    structured_address = None
     
-    # 1. New dynamic location routing
-    routing_result = local_route_complaint(route_req.lat, route_req.lng, route_req.address)
+    # Scenario A: High-Trust Reporting (GPS Enabled)
+    if route_req.lat is not None and route_req.lng is not None:
+        print("[Location Service] Using Reverse Geocoding...")
+        structured_address = reverse_geocode(route_req.lat, route_req.lng)
+        
+    # Scenario B: Manual Reporting (No GPS / Gallery Uploads)
+    elif route_req.state and route_req.city and route_req.address:
+        print("[Location Service] Using Geocoding Verification...")
+        structured_address = verify_address(route_req.state, route_req.city, route_req.address)
+        
+    if not structured_address:
+        if route_req.address or route_req.city or route_req.state:
+            location_string = f"{route_req.address or ''}, {route_req.city or ''}, {route_req.state or ''}".strip(", ")
+        else:
+            return {
+                "structured_address": None,
+                "routing": {
+                    "portal_name": "CPGRAMS",
+                    "portal_url": PORTALS_DB.get("CENTRAL", {}).get("CPGRAMS", "https://pgportal.gov.in/Registration"),
+                    "reasoning": "Insufficient location data provided. Routing to the central CPGRAMS portal as a default fallback."
+                }
+            }
+    else:
+        location_string = (
+            structured_address.get("Address")
+            if structured_address
+            else f"{route_req.address or ''}, {route_req.city or ''}, {route_req.state or ''}"
+        )
+        
+    print(f"[Bedrock Nova Pro] Determining portal for: {location_string}")
+    # 2 & 3: The Routing Knowledge Base & The LLM System Prompt
+    routing_result = get_portal_routing(location_string, PORTALS_DB)
     
     if not routing_result:
         raise HTTPException(status_code=500, detail="Failed to route complaint")
         
-    structured_address = routing_result.get("mapped_location")
-    
     # --- Nova Act: Extract form fields from the routed portal ---
     form_fields = {}
     portal_url = routing_result.get("portal_url", "")
     portal_name = routing_result.get("portal_name", "Unknown")
-    
     if portal_url:
         try:
             print(f"[Nova Act] Scraping form fields from: {portal_name} ({portal_url})")
@@ -803,35 +762,17 @@ def route_complaint_endpoint(route_req: RouteRequest):
         "form_schema": form_fields
     }
 
-
 # Feature 6 Endpoint
 @app.post("/api/draft")
 async def mock_generate_draft(data: dict):
-    print(f"[Amazon Bedrock] Generating dynamic payload for data: {data}")
-    
-    # 1. Check if the portal schema was passed and compile dynamically
-    try:
-        schema = data.get("form_schema", {})
-        if schema and ("fields" in schema or "error" not in schema):
-            print("[Amazon Bedrock] Found Nova Act form schema, compiling structured draft...")
-            compiled_payload = compile_draft(data, schema)
-            return compiled_payload
-    except Exception as e:
-        print(f"Draft compilation failed: {e}")
-        
-    # 2. Fallback to generic mock text if schema extraction failed
-    print("[Amazon Bedrock] Form schema missing or failed, generating generic paragraph.")
-    time.sleep(1.0)
+    print(f"[Amazon Bedrock] Generating draft for data: {data}")
+    time.sleep(2.0)
     
     analysis_desc = data.get("analysis", {}).get("suggested_description", "")
     transcript_desc = data.get("transcription", {}).get("transcript", "")
-    location_address = data.get("locationData", {}).get("address", "")
     
     description = analysis_desc or ("Voice Report: " + transcript_desc) or "Observed civic issue."
     
-    if location_address:
-        description += f"\n\nReported Location: {location_address}"
-        
     return {
         "applicantName": "A Citizen",
         "phoneNumber": "+91-9876543210",
