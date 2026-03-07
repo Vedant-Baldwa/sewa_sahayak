@@ -24,9 +24,6 @@ const Navbar = ({ user, onLogout }) => {
                             <NavLink to="/dashcam" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
                                 <Video size={18} /> Dashcam
                             </NavLink>
-                            <NavLink to="/report" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-                                <Camera size={18} /> Manual Report
-                            </NavLink>
                             <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
                                 <MapPin size={18} /> Intelligence Map
                             </NavLink>
