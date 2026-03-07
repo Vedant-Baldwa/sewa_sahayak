@@ -3,7 +3,7 @@
  */
 export const mockTranscribeAudio = async (audioBlob, language = 'hi-IN') => {
     console.log(`[AWS Transcribe via Python API] Sending audio for transcription...`);
-    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
 
     const formData = new FormData();
     formData.append('audio', audioBlob, 'voice_note.webm');

@@ -31,7 +31,7 @@ function App() {
     }
 
     const checkSession = async () => {
-      const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+      const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
       try {
         const res = await fetch(`${BACKEND_URL}/api/auth/me`, { credentials: "include" });
         if (res.ok) {
@@ -80,7 +80,7 @@ function App() {
   };
 
   const handleLogout = async () => {
-    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
     try {
       await fetch(`${BACKEND_URL}/api/auth/logout`, { method: "POST", credentials: "include" });
       setUser(null);

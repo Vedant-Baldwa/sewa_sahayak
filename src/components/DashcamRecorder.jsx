@@ -20,7 +20,7 @@ const DashcamRecorder = () => {
     // Live Redaction Polling (client-side preview only)
     useEffect(() => {
         let liveDetectionInterval;
-        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
 
         const updateLivePii = async () => {
             if (!videoRef.current || videoRef.current.paused || videoRef.current.ended) return;
@@ -96,7 +96,7 @@ const DashcamRecorder = () => {
     // Sync background loop
     const syncSegments = useCallback(async () => {
         if (!isOnline || isUploading) return;
-        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
         try {
             setIsUploading(true);
             const unsynced = await getUnsyncedDashcamSegments();

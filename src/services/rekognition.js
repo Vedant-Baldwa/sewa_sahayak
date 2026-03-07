@@ -8,7 +8,7 @@ export const mockRedactMedia = async (mediaBlob) => {
     formData.append('media', mediaBlob, 'raw_capture.blob');
 
     try {
-        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
         const response = await fetch(`${BACKEND_URL}/api/redact`, {
             method: 'POST',
             credentials: 'include',

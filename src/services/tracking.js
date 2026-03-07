@@ -16,7 +16,7 @@ export const saveReportToDynamoDB = async (ticketId, draft, captureId) => {
             status: 'SUBMITTED',
             captureId
         };
-        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
         const res = await fetch(`${BACKEND_URL}/api/reports/save`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -43,7 +43,7 @@ export const uploadEvidenceToS3 = async (blob, ticketId) => {
         formData.append("evidence", blob, "evidence.jpg");
         formData.append("ticketId", ticketId);
 
-        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
         const res = await fetch(`${BACKEND_URL}/api/evidence/upload`, {
             method: "POST",
             credentials: "include",

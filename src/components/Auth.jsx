@@ -2,7 +2,7 @@ import React from 'react';
 import { LogIn, Shield } from 'lucide-react';
 
 export default function Auth() {
-    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
 
     const handleLogin = () => {
         window.location.href = `${BACKEND_URL}/login`;
