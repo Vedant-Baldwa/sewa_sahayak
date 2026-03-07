@@ -1,5 +1,5 @@
 /**
- * Refactored Amazon Bedrock (Nova Pro) Service connecting to Python Backend
+ * Amazon Bedrock (Nova Pro) Service - Real Backend Integration
  */
 export const mockAnalyzeMedia = async (mediaBlob, type = 'image') => {
     console.log(`[Amazon Bedrock Nova Pro via Python API] Sending media for analysis: ${type}`);
@@ -16,10 +16,14 @@ export const mockAnalyzeMedia = async (mediaBlob, type = 'image') => {
             body: formData
         });
 
-        if (!response.ok) throw new Error("Backend API Error");
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || "Bedrock Analysis API Error");
+        }
+
         return await response.json();
     } catch (error) {
-        console.error("Analysis API failed:", error);
+        console.error("Bedrock Analysis failed:", error);
         throw error;
     }
 };

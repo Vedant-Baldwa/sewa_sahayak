@@ -14,26 +14,66 @@ import Home from './pages/Home';
 import DashcamPage from './pages/DashcamPage';
 import MapPage from './pages/MapPage';
 import ProfilePage from './pages/ProfilePage';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import OnlineIndicator from './components/OnlineIndicator';
+import AudioRecorder from './components/AudioRecorder';
+import {
+  Camera, Video, CheckCircle, RefreshCw, X as XIcon, Menu, ArrowRight, MapPin,
+  UserCircle, Shield, Bot, FileText, AlertCircle, LogOut, Home, Archive, Bell,
+  MessageSquare, History, Phone, User, Zap, Lock, Sun, Moon, Globe
+} from 'lucide-react';
+import { saveMediaLocally, getUnsyncedMedia, markMediaAsSynced } from './utils/db';
+import { useOnlineStatus } from './hooks/useOnlineStatus';
+import { transcribeAudioWithAWS } from './services/transcribe';
+import { analyzeMediaWithBedrock } from './services/bedrock';
+import { redactMediaWithRekognition } from './services/rekognition';
+import { getDeviceLocation } from './services/gps';
+import DraftReview from './components/DraftReview';
+import AgenticSubmission from './components/AgenticSubmission';
+import Auth from './components/Auth';
+import AIChatbot from './components/AIChatbot';
+import LandingNav from './components/landing/LandingNav';
+import HeroSection from './components/landing/HeroSection';
+import FeatureGrid from './components/landing/FeatureGrid';
+import HowItWorks from './components/landing/HowItWorks';
+import LandingFooter from './components/landing/LandingFooter';
+import MyReports from './components/MyReports';
+import UserProfileForm from './components/UserProfileForm';
+import LanguageSelector from './components/LanguageSelector';
+import { uploadEvidenceToS3, saveReportToDynamoDB, sendPushNotification } from './services/tracking';
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+
+
+// ─────────────────────────────── Main App ────────────────────────────────────
 function App() {
   const isOnline = useOnlineStatus();
+
+  // ── Core capture state (unchanged from original) ──────────────────────────
   const [captures, setCaptures] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [user, setUser] = useState(null);
 
   // Sync effect & Session Check
   useEffect(() => {
-    if (isOnline) {
-      syncOfflineData();
-    }
-    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
+    document.body.className = `theme-${globalTheme}`;
+    localStorage.setItem('sahayak_global_theme', globalTheme);
+  }, [globalTheme]);
+
+  // ── Notify helper ─────────────────────────────────────────────────────────
+  const notify = useCallback((msg, type = 'success') => {
+    setNotification({ msg, type });
+    setTimeout(() => setNotification(null), 4000);
+  }, []);
+
+  const scrollToAuth = (mode = 'signin') => {
+    setAuthMode(mode);
+    setShowAuth(true);
+  };
 
     const checkSession = async () => {
-      const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
       try {
-        const res = await fetch(`${BACKEND_URL}/api/auth/me`, { credentials: "include" });
+        const res = await fetch(`${BACKEND_URL}/api/auth/me`, { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
           setUser({ ...data.user, userData: data.userData, token: data.token });
@@ -43,6 +83,14 @@ function App() {
       }
     };
     checkSession();
+  }, []);
+
+  // ── Offline sync ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (isOnline) syncOfflineData();
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
   }, [isOnline]);
 
   const syncOfflineData = async () => {
@@ -50,7 +98,7 @@ function App() {
     try {
       const unsynced = await getUnsyncedMedia();
       if (unsynced.length > 0) {
-        console.log(`Found ${unsynced.length} offline captures to sync`);
+        console.log(`Syncing ${unsynced.length} offline captures...`);
         for (const item of unsynced) {
           try {
             const offlineTicketId = `BMC-OFFLINE-${Math.floor(Math.random() * 10000)}`;
@@ -71,9 +119,10 @@ function App() {
           }
         }
         setCaptures(prev => prev.map(c => ({ ...c, synced: true })));
+        notify(`${unsynced.length} offline report(s) synced to AWS.`);
       }
     } catch (err) {
-      console.error("Sync failed", err);
+      console.error('Sync failed', err);
     } finally {
       setIsSyncing(false);
     }

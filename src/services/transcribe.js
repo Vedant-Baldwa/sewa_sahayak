@@ -1,5 +1,5 @@
 /**
- * Refactored Transcribe Service connecting to Python Backend
+ * Amazon Transcribe Service - Real Backend Integration
  */
 export const mockTranscribeAudio = async (audioBlob, language = 'hi-IN') => {
     console.log(`[AWS Transcribe via Python API] Sending audio for transcription...`);
@@ -7,6 +7,7 @@ export const mockTranscribeAudio = async (audioBlob, language = 'hi-IN') => {
 
     const formData = new FormData();
     formData.append('audio', audioBlob, 'voice_note.webm');
+    formData.append('language', language);
 
     try {
         const response = await fetch(`${BACKEND_URL}/api/transcribe`, {
@@ -15,10 +16,14 @@ export const mockTranscribeAudio = async (audioBlob, language = 'hi-IN') => {
             body: formData
         });
 
-        if (!response.ok) throw new Error("Backend API Error");
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || "Transcription API Error");
+        }
+
         return await response.json();
     } catch (error) {
-        console.error("Transcription API failed:", error);
+        console.error("Transcription failed:", error);
         throw error;
     }
 };

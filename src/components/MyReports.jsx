@@ -72,17 +72,35 @@ export default function MyReports() {
                         <p style={{ fontSize: '0.8rem', marginTop: '0.5rem' }}>Reports you submit will appear here across all your devices.</p>
                     </div>
                 ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        {reports.map((report) => (
-                            <div key={report.ticketId} style={{ background: 'rgba(255,255,255,0.8)', padding: '1.25rem', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)', boxShadow: 'var(--shadow-sm)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                                    <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--color-primary)', background: 'var(--color-bg)', padding: '2px 8px', borderRadius: '4px' }}>
-                                        {report.ticketId}
-                                    </span>
-                                    <span style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--color-success)', fontWeight: '600' }}>
-                                        <Clock size={12} /> {report.status}
-                                    </span>
+                    reports.map((report) => (
+                        <div key={report.ticketId} className="flashcard" style={{
+                            background: 'rgba(255,255,255,0.03)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: 24,
+                            cursor: 'default', transition: 'all 0.3s',
+                            overflow: 'hidden',
+                            display: 'flex',
+                            flexDirection: 'row'
+                        }}>
+                            {/* Media Column */}
+                            {report.capturePreview && (
+                                <div style={{ width: 180, minWidth: 180, background: 'rgba(0,0,0,0.2)', position: 'relative', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
+                                    {report.captureType === 'image' ? (
+                                        <img src={report.capturePreview} alt="Evidence" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    ) : report.captureType === 'video' ? (
+                                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
+                                            <div style={{ position: 'absolute', inset: 0, opacity: 0.5 }}>
+                                                <video src={report.capturePreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            </div>
+                                            <Clock size={24} color="white" style={{ position: 'relative' }} />
+                                        </div>
+                                    ) : (
+                                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.03)' }}>
+                                            <FileText size={24} color="var(--primary)" />
+                                        </div>
+                                    )}
                                 </div>
+                            )}
 
                                 <h4 style={{ fontWeight: '600', fontSize: '1rem', marginBottom: '0.25rem' }}>{report.jurisdiction?.portal_name || report.damageType || 'Government Portal'}</h4>
 
@@ -90,12 +108,19 @@ export default function MyReports() {
                                     <MapPin size={12} /> {report.jurisdiction?.ward_district || 'Location unavailable'}
                                 </div>
 
-                                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                                    Submitted on {new Date(report.timestamp).toLocaleDateString()} at {new Date(report.timestamp).toLocaleTimeString()}
+                                <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', marginBottom: '1.25rem' }} />
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--muted)', opacity: 0.6 }}>
+                                        {report.department || 'Road & Pothole Dept.'}
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--primary)', fontWeight: 800, fontSize: '0.8rem' }}>
+                                        {report.damageType || 'Civic Issue'} <ChevronRight size={14} />
+                                    </div>
                                 </div>
                             </div>
-                        ))}
-                    </div>
+                        </div>
+                    ))
                 )}
             </div>
 

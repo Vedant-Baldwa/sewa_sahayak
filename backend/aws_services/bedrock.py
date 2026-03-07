@@ -59,3 +59,49 @@ Output Format: (Strict JSON)
             "portal_url": portals_db.get('CENTRAL', {}).get('CPGRAMS', ''),
             "reasoning": f"Default fallback due to an error processing the request or LLM failure: {str(e)}"
         }
+
+def compile_draft(data: dict, schema: dict) -> dict:
+    """
+    Takes the compiled incident data and pairs it with the scraped portal's JSON schema.
+    Amazon Nova Pro is used to generate a 1:1 mapped payload that precisely fulfills 
+    all the required portal form fields.
+    """
+    system_prompt = f"""You are an automated dispatch system.
+Given the following incident data and the target strict JSON schema of the government portal, 
+your job is to map the data exactly into this schema format so it can be submitted by an automated agent.
+Ensure all mandatory fields are present. Output only valid JSON that matches the provided schema fields.
+In your output, do NOT wrap the json output in ``` or any markdown formatting. Output raw JSON.
+
+Target Form Schema: {json.dumps(schema)}
+"""
+    messages = [
+        {"role": "user", "content": [{"text": f"Please map this incident data to the form schema:\\n{json.dumps(data)}"}]}
+    ]
+
+    try:
+        response = bedrock_client.invoke_model(
+            modelId="amazon.nova-pro-v1:0",
+            body=json.dumps({
+                "system": [{"text": system_prompt}],
+                "messages": messages,
+                "inferenceConfig": {"max_new_tokens": 1024, "temperature": 0.1}
+            }),
+            contentType="application/json",
+            accept="application/json"
+        )
+        response_body = json.loads(response['body'].read().decode('utf-8'))
+        
+        output_text = response_body.get('output', {}).get('message', {}).get('content', [{}])[0].get('text', '')
+        
+        # Clean up possible markdown wrappers
+        if "```json" in output_text:
+            output_text = output_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in output_text:
+            output_text = output_text.split("```")[1].strip()
+            
+        return json.loads(output_text)
+    
+    except Exception as e:
+        print(f"Bedrock Compilation Error: {e}")
+        # Return fallback dictionary
+        return {"error": str(e), "_raw_payload": data}
