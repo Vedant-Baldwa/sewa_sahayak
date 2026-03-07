@@ -121,8 +121,7 @@ async def authorize(request: Request):
         user = token.get('userinfo')
         if user:
             request.session['user'] = user
-            request.session['id_token'] = token.get('id_token')
-            request.session['access_token'] = token.get('access_token')
+            # Avoid saving id_token and access_token in session. They exceed 4KB cookie limits!
             
             uuid_sub = user.get('sub')
             user_metadata = None
@@ -193,8 +192,7 @@ async def authorize_google(request: Request):
         user = token.get('userinfo')
         if user:
             request.session['user'] = user
-            request.session['id_token'] = token.get('id_token')
-            request.session['access_token'] = token.get('access_token')
+            # Avoid saving large tokens inside session dict
             
             uuid_sub = user.get('sub')
             user_metadata = None

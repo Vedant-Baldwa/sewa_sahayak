@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, ShieldAlert, CheckCircle, Globe, Bot } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle, Globe, Bot } from 'lucide-react';
 
 export default function AgenticSubmission({ draft, onComplete }) {
     const [step, setStep] = useState(0); // 0: init, 1: nav, 2: fill, 3: captcha, 4: solving, 5: submit, 6: done
@@ -44,7 +44,7 @@ export default function AgenticSubmission({ draft, onComplete }) {
                             {step === s.id && s.id !== 3 && s.id !== 6 ? (
                                 <Loader2 size={20} className="animate-spin" color="var(--color-primary)" />
                             ) : s.id === 3 && step === 3 ? (
-                                <ShieldAlert size={20} color="var(--color-warning)" className="animate-pulse" />
+                                <AlertCircle size={20} color="var(--color-warning)" className="animate-pulse" />
                             ) : s.id === 6 ? (
                                 <CheckCircle size={20} color="var(--color-success)" />
                             ) : (

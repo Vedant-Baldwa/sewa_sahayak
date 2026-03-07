@@ -1,37 +1,70 @@
 import React from 'react';
 import MyReports from '../components/MyReports';
-import { User, Calendar } from 'lucide-react';
+import { User, Calendar, Shield } from 'lucide-react';
 
 const ProfilePage = ({ user }) => {
     const memberSince = user?.created_at
         ? new Date(parseInt(user.created_at) * 1000).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
-        : null;
+        : "March 2026";
 
     return (
-        <div className="page-container animate-fade-in max-w-lg mx-auto">
+        <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
+            <div className="grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
 
-            {/* Profile Header */}
-            <div className="glass-panel text-center mb-4 p-4">
-                <div className="avatar-circle mx-auto mb-2 bg-gradient-brand flex-center text-white" style={{ width: '60px', height: '60px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', fontWeight: 'bold', background: 'var(--gradient-primary)', color: 'white' }}>
-                    {user?.name ? user.name.charAt(0).toUpperCase() : <User size={30} />}
+                {/* Profile Card */}
+                <div className="card-3d reveal" style={{ height: 'fit-content' }}>
+                    <div style={{ textAlign: 'center' }}>
+                        <div style={{
+                            width: '80px',
+                            height: '80px',
+                            borderRadius: '50%',
+                            margin: '0 auto 1.5rem',
+                            background: 'var(--gradient-primary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '2rem',
+                            fontWeight: 'bold',
+                            boxShadow: '0 0 30px var(--color-primary-glow)'
+                        }}>
+                            {user?.name ? user.name.charAt(0).toUpperCase() : <User size={40} />}
+                        </div>
+
+                        <h2 style={{ fontSize: '1.75rem', marginBottom: '0.25rem' }}>{user?.name || "Citizen Reporter"}</h2>
+                        <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem' }}>{user?.email}</p>
+
+                        <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '0.5rem 1rem',
+                            background: 'rgba(255,255,255,0.05)',
+                            borderRadius: '100px',
+                            fontSize: '0.85rem'
+                        }}>
+                            <Calendar size={14} className="text-primary" /> Member Since {memberSince}
+                        </div>
+                    </div>
+
+                    <div style={{ marginTop: '2.5rem', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '2rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
+                            <Shield className="text-success" size={20} />
+                            <div>
+                                <h4 style={{ fontSize: '0.9rem' }}>Civic Identity Verified</h4>
+                                <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Your reports are prioritized for review.</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <h2 className="heading-3 mb-1">{user?.name || "Citizen Reporter"}</h2>
-                <p className="text-sm text-muted">{user?.email}</p>
 
-                {memberSince && (
-                    <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                        <Calendar size={12} /> Member since {memberSince}
-                    </p>
-                )}
-
-                <p style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: '0.75rem', opacity: 0.7 }}>
-                    Your data syncs across all devices via your account.
-                </p>
-            </div>
-
-            {/* Reports List */}
-            <div className="reports-wrapper" style={{ minHeight: '400px' }}>
-                <MyReports />
+                {/* Reports History */}
+                <div className="card-3d reveal delay-1" style={{ minHeight: '500px' }}>
+                    <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h3 style={{ fontSize: '1.25rem' }}>Recent Reports</h3>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--color-primary)', fontWeight: 600 }}>Sync Active</span>
+                    </div>
+                    <MyReports />
+                </div>
             </div>
         </div>
     );

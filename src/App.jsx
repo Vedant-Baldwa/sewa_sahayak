@@ -94,9 +94,16 @@ function App() {
   return (
     <Router>
       <div className="app-layout">
+        {/* Background Atmosphere */}
+        <div className="atmosphere" style={{ zIndex: 0 }}>
+          <div className="glow-orb orb-1"></div>
+          <div className="glow-orb orb-2"></div>
+          <div className="glow-orb orb-3"></div>
+        </div>
+
         <Navbar user={user} onLogout={handleLogout} />
 
-        <main className="app-content">
+        <main style={{ flex: 1, position: 'relative', zIndex: 1 }}>
           <Routes>
             <Route path="/" element={<Home user={user} />} />
 
