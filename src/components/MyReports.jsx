@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Archive, Clock, MapPin, RefreshCw, Loader2 } from 'lucide-react';
+import { Archive, Clock, MapPin, RefreshCw, Loader2, FileText, ChevronRight } from 'lucide-react';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -35,10 +35,12 @@ export default function MyReports() {
 
     useEffect(() => {
         fetchReports();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     return (
         <div className="glass-panel" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
                 <h2 className="heading-2">My Reports</h2>
                 <button
@@ -52,6 +54,7 @@ export default function MyReports() {
                 </button>
             </div>
 
+            {/* Content */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
                 {loading ? (
                     <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--color-text-muted)' }}>
@@ -73,14 +76,15 @@ export default function MyReports() {
                     </div>
                 ) : (
                     reports.map((report) => (
-                        <div key={report.ticketId} className="flashcard" style={{
+                        <div key={report.ticketId || report.id} className="flashcard" style={{
                             background: 'rgba(255,255,255,0.03)',
                             border: '1px solid rgba(255,255,255,0.08)',
                             borderRadius: 24,
                             cursor: 'default', transition: 'all 0.3s',
                             overflow: 'hidden',
                             display: 'flex',
-                            flexDirection: 'row'
+                            flexDirection: 'row',
+                            marginBottom: '1.25rem',
                         }}>
                             {/* Media Column */}
                             {report.capturePreview && (
@@ -102,7 +106,11 @@ export default function MyReports() {
                                 </div>
                             )}
 
-                                <h4 style={{ fontWeight: '600', fontSize: '1rem', marginBottom: '0.25rem' }}>{report.jurisdiction?.portal_name || report.damageType || 'Government Portal'}</h4>
+                            {/* Content Column */}
+                            <div style={{ padding: '1.75rem', flex: 1 }}>
+                                <h4 style={{ fontWeight: '600', fontSize: '1rem', marginBottom: '0.25rem' }}>
+                                    {report.jurisdiction?.portal_name || report.damageType || 'Government Portal'}
+                                </h4>
 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--color-text-muted)', fontSize: '0.8rem', marginBottom: '0.75rem' }}>
                                     <MapPin size={12} /> {report.jurisdiction?.ward_district || 'Location unavailable'}
@@ -130,6 +138,6 @@ export default function MyReports() {
                 .spin { animation: spin 1s linear infinite; }
                 `
             }} />
-        </div >
+        </div>
     );
 }
