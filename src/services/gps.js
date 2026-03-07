@@ -3,7 +3,7 @@
  * Uses real browser Geolocation API + backend routing
  */
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
 
 /**
  * Uses the real browser Geolocation API to get high-accuracy GPS coordinates.

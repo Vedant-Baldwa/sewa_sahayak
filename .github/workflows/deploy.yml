@@ -1,0 +1,61 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+      - vedant
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '20'
+
+    - name: Build Frontend
+      run: |
+        npm install
+        npm run build
+
+    - name: Setup SSH key and deploy via rsync
+      env:
+        SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        HOST: ${{ secrets.EC2_HOST }}
+        USER: ${{ secrets.EC2_USER }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_KEY" > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
+        ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+        
+        # Rsync the entire repository (excluding git/node_modules) and the built dist folder
+        rsync -avz --delete --exclude='.git' --exclude='node_modules' --exclude='.env' --exclude='*.pem' -e "ssh -i ~/.ssh/deploy_key" ./ $USER@$HOST:/var/www/sewa_sahayak/
+
+    - name: Restart Backend & Nginx on EC2
+      env:
+        SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        HOST: ${{ secrets.EC2_HOST }}
+        USER: ${{ secrets.EC2_USER }}
+      run: |
+        ssh -i ~/.ssh/deploy_key $USER@$HOST << 'EOF'
+          cd /var/www/sewa_sahayak/backend
+          
+          # Install dependencies securely in venv
+          source venv/bin/activate
+          pip install -r requirements.txt --quiet
+          pip install authlib itsdangerous starlette --quiet
+          
+          # Restart Python API (PM2)
+          pm2 restart sewa_backend || pm2 start "venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000" --name "sewa_backend"
+          pm2 save
+          
+          # Restart Nginx
+          sudo systemctl restart nginx
+        EOF

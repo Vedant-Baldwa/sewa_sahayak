@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Archive, Clock, MapPin, RefreshCw, Loader2 } from 'lucide-react';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
 
 export default function MyReports() {
     const [reports, setReports] = useState([]);

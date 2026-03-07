@@ -41,7 +41,7 @@ const Dashboard = () => {
 
     const fetchClusters = async () => {
         try {
-            const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+            const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
             const res = await fetch(`${BACKEND_URL}/api/clusters`, { credentials: 'include' });
             const data = await res.json();
             setClusters(data.clusters || []);
@@ -58,7 +58,7 @@ const Dashboard = () => {
 
         setDraftRequestStatus('generating');
         try {
-            const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+            const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
             const res = await fetch(`${BACKEND_URL}/api/reports/generate_complaint`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -84,7 +84,7 @@ const Dashboard = () => {
         if (!selectedCluster) return;
         setMarkFiledStatus('marking');
         try {
-            const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+            const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
             const res = await fetch(`${BACKEND_URL}/api/clusters/mark_filed`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
