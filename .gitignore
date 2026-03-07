@@ -38,3 +38,9 @@ backend/.env
 push.log
 out.log
 events.json
+
+__pycache__/
+*.pyc
+*.pyo
+
+.venv/
