@@ -45,7 +45,6 @@ function App() {
   const [manualLocationInput, setManualLocationInput] = useState('');
   const [selectedCaptureForDraft, setSelectedCaptureForDraft] = useState(null);
   const [activeSubmissionDraft, setActiveSubmissionDraft] = useState(null);
-  const [isVoiceRecording, setIsVoiceRecording] = useState(false);
 
   // ── Auth & UI state ───────────────────────────────────────────────────────
   const [user, setUser] = useState(null);
@@ -103,7 +102,7 @@ function App() {
           const data = await res.json();
           setUser({ ...data.user, userData: data.userData, token: data.token });
         }
-      } catch (err) {
+      } catch {
         console.warn('No active session.');
       } finally {
         setAuthLoading(false);
@@ -128,7 +127,14 @@ function App() {
         console.log(`Syncing ${unsynced.length} offline captures...`);
         for (const item of unsynced) {
           try {
-            const offlineTicketId = `BMC-OFFLINE-${Math.floor(Math.random() * 10000)}`;
+            // Generate a dummy ticketId for offline synced draft
+            let prefix = 'TKT';
+            if (item.jurisdiction && item.jurisdiction.portal_name) {
+              prefix = item.jurisdiction.portal_name.substring(0, 3).toUpperCase();
+            }
+            const offlineTicketId = `${prefix}-OFFLINE-${Math.floor(Math.random() * 10000)}`;
+
+            // Only sync if there is a blob
             if (item.blob) {
               await uploadEvidenceToS3(item.blob, offlineTicketId);
               const draftData = { jurisdiction: item.jurisdiction || 'Unknown', damageType: 'Offline Submission', severity: 'Unknown' };
@@ -155,7 +161,7 @@ function App() {
   const handleLogout = async () => {
     try {
       await fetch(`${BACKEND_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' });
-    } catch (_) { }
+    } catch { /* ignore */ }
     setUser(null);
     setCaptures([]);
     setActiveView('dashboard');
@@ -176,20 +182,26 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ lat: locationData.lat, lng: locationData.lng }),
+        body: JSON.stringify({ lat: locationData.lat, lng: locationData.lng })
       });
-      if (routeRes.ok) {
-        const routeData = await routeRes.json();
-        jurisdiction = {
-          jurisdiction_level: routeData.routing?.portal_name === 'CPGRAMS' ? 'Central' : 'Local/State',
-          portal_name: routeData.routing?.portal_name || 'Government Portal',
-          portal_url: routeData.routing?.portal_url || '',
-          ward_district: routeData.structured_address?.District || routeData.structured_address?.City || 'Unknown Ward',
-          mapped_coordinates: { lat: locationData.lat, lng: locationData.lng },
-        };
-        locationData.address = routeData.structured_address?.Address || '';
-      }
-      await finalizeCapture({ blob, type, previewUrl, timestamp, jurisdiction, locationData, additionalMetaData });
+      if (!routeRes.ok) throw new Error("Failed to dynamically route location");
+      const routeData = await routeRes.json();
+
+      jurisdiction = {
+        ...routeData.routing,
+        jurisdiction_level: routeData.routing?.portal_name === 'CPGRAMS' ? 'Central' : 'Local/State',
+        ward_district: routeData.structured_address ? (routeData.structured_address.District || routeData.structured_address.City || "Mapped Region") : "Mapped Region",
+        mapped_coordinates: { lat: locationData.lat, lng: locationData.lng }
+      };
+      locationData.address = routeData.structured_address?.Address || '';
+
+      // Ensure form_schema successfully fetched by Nova Act is bundled into metadata for the draft
+      additionalMetaData.formSchema = routeData.form_schema;
+
+      // If success, proceed to save directly
+      await finalizeCapture({
+        blob, type, previewUrl, timestamp, jurisdiction, locationData, additionalMetaData
+      });
     } catch (err) {
       console.warn('Location capture failed, requesting manual entry', err);
       setPendingCapture({ blob, type, previewUrl, timestamp, additionalMetaData });
@@ -200,18 +212,50 @@ function App() {
   };
 
   const submitManualLocation = async () => {
-    if (!manualLocationInput.trim()) return;
-    const manualJurisdiction = {
-      jurisdiction_level: 'Municipal',
-      portal_name: 'Manual Entry Jurisdiction',
-      portal_url: 'https://mock.gov.in/report',
-      ward_district: manualLocationInput,
-      mapped_coordinates: { lat: 0, lng: 0 },
-    };
-    await finalizeCapture({ ...pendingCapture, jurisdiction: manualJurisdiction, locationData: { address: manualLocationInput } });
-    setLocationError(null);
-    setPendingCapture(null);
-    setManualLocationInput('');
+    try {
+      if (!manualLocationInput.trim()) return;
+
+      const routeRes = await fetch(`${BACKEND_URL}/api/route`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ address: manualLocationInput })
+      });
+
+      let jurisdiction = {
+        jurisdiction_level: "Municipal",
+        portal_name: "Fallback Jurisdiction",
+        portal_url: "https://mock.gov.in/report",
+        ward_district: manualLocationInput,
+        mapped_coordinates: { lat: 0, lng: 0 }
+      };
+
+      let formSchema = null;
+
+      if (routeRes.ok) {
+        const routeData = await routeRes.json();
+        jurisdiction = {
+          ...routeData.routing,
+          ward_district: routeData.structured_address ? (routeData.structured_address.City || routeData.structured_address.District || manualLocationInput) : manualLocationInput
+        };
+        formSchema = routeData.form_schema;
+      }
+
+      await finalizeCapture({
+        ...pendingCapture,
+        jurisdiction: jurisdiction,
+        locationData: { address: manualLocationInput },
+        additionalMetaData: { ...pendingCapture.additionalMetaData, formSchema }
+      });
+
+      // Cleanup states
+      setLocationError(null);
+      setPendingCapture(null);
+      setManualLocationInput('');
+    } catch {
+      console.error("Manual Entry Error");
+      alert("Error saving manual location");
+    }
   };
 
   const finalizeCapture = async ({ blob, type, previewUrl, timestamp, jurisdiction, locationData, additionalMetaData }) => {
@@ -220,7 +264,7 @@ function App() {
     const newCapture = { id, blob, type, timestamp, synced: isOnline, ...metadata };
     setCaptures(prev => [newCapture, ...prev]);
     if (isOnline) {
-      setTimeout(async () => { try { await markMediaAsSynced(id); } catch (_) { } }, 500);
+      setTimeout(async () => { try { await markMediaAsSynced(id); } catch { /* ignore */ } }, 500);
     }
     // Automatically jump straight to agentic draft step
     setSelectedCaptureForDraft(newCapture);
@@ -438,7 +482,6 @@ function App() {
     <AppShell
       user={user} onLogout={handleLogout} activeView={activeView} setActiveView={setActiveView}
       sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} notification={notification}
-      isOnline={isOnline} isSyncing={isSyncing}
       chatbotOpen={chatbotOpen} setChatbotOpen={setChatbotOpen}
       globalTheme={globalTheme} setGlobalTheme={setGlobalTheme}
     >
@@ -615,10 +658,9 @@ function App() {
   );
 }
 
-// ─────────────────────── App Shell (header + sidebar) ────────────────────────
 function AppShell({
   children, user, onLogout, activeView, setActiveView, sidebarOpen, setSidebarOpen,
-  notification, isOnline, isSyncing, chatbotOpen, setChatbotOpen, globalTheme, setGlobalTheme
+  notification, chatbotOpen, setChatbotOpen, globalTheme, setGlobalTheme
 }) {
   const displayName = user?.userData?.fullName || user?.userData?.name || user?.name || user?.email?.split('@')[0] || 'User';
   const email = user?.email || '';

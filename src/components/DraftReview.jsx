@@ -7,7 +7,6 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
 export default function DraftReview({ capture, onClose, onSubmit }) {
     const [draft, setDraft] = useState(null);
-    const [formSchema, setFormSchema] = useState({});
     const [isGenerating, setIsGenerating] = useState(true);
     const [statusMsg, setStatusMsg] = useState('Initializing Portal Router and Web Bridge Agent…');
 
@@ -37,7 +36,6 @@ export default function DraftReview({ capture, onClose, onSubmit }) {
                     const routeData = await routeRes.json();
                     schema = routeData.form_schema || {};
                     routing = routeData.routing || {};
-                    setFormSchema(schema);
                     setStatusMsg(`Mapped to ${routing.portal_name}. Compiling evidence via Bedrock…`);
                 }
 
@@ -128,42 +126,49 @@ export default function DraftReview({ capture, onClose, onSubmit }) {
                         </div>
                     </div>
 
-                    <div className="input-group">
-                        <label className="input-label">Jurisdiction</label>
-                        <input className="input-field" disabled value={`${draft.jurisdiction} — ${draft.ward}`} />
-                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginTop: '1rem' }}>
+                        <div className="input-group">
+                            <label className="input-label">Jurisdiction (Auto-Mapped)</label>
+                            <input className="input-field" disabled value={`${capture.jurisdiction?.portal_name || draft.jurisdiction || 'Unknown'} - ${capture.jurisdiction?.ward_district || draft.ward || 'Unknown'}`} />
+                        </div>
 
-                    <div className="input-group">
-                        <label className="input-label">Issue Taxonomy</label>
-                        <input className="input-field" name="damageType" value={draft.damageType} onChange={handleChange} />
-                    </div>
+                        {Object.entries(draft).map(([key, value]) => {
+                            // Skip nested objects or internal mapping keys if they are redundant with the jurisdiction header
+                            if (key === 'jurisdiction' || key === 'ward' || typeof value === 'object') return null;
 
-                    <div className="input-group">
-                        <label className="input-label">Severity Level</label>
-                        <select className="input-field" name="severity" value={draft.severity} onChange={handleChange}>
-                            <option value="Low">Low</option>
-                            <option value="Medium">Medium</option>
-                            <option value="High">High</option>
-                            <option value="Critical">Critical</option>
-                        </select>
-                    </div>
+                            const isTextArea = typeof value === 'string' && (value.length > 60 || key.toLowerCase().includes('desc') || key.toLowerCase().includes('detail') || key.toLowerCase().includes('address'));
 
-                    <div className="input-group">
-                        <label className="input-label">Verified Applicant</label>
-                        <input className="input-field" name="applicantName" value={draft.applicantName} onChange={handleChange} />
+                            return (
+                                <div className="input-group" key={key}>
+                                    <label className="input-label" style={{ textTransform: 'capitalize' }}>{key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim()}</label>
+                                    {isTextArea ? (
+                                        <textarea
+                                            className="input-field"
+                                            name={key}
+                                            value={value || ''}
+                                            onChange={handleChange}
+                                            rows={4}
+                                            style={{ resize: 'vertical' }}
+                                        />
+                                    ) : (
+                                        <input
+                                            className="input-field"
+                                            name={key}
+                                            value={value || ''}
+                                            onChange={handleChange}
+                                        />
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
 
-                {/* Right Column: Detailed Description & Submission */}
+                {/* Right Column: Portal Credentials & Submission */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                    <div className="input-group">
-                        <label className="input-label">Official Description</label>
-                        <textarea className="input-field" name="description" value={draft.description} onChange={handleChange} rows={10} style={{ resize: 'none' }} />
-                    </div>
-
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                         <div className="input-group">
-                            <label className="input-label">Portal Username</label>
+                            <label className="input-label">Portal Username (If needed)</label>
                             <input className="input-field" name="portalUsername" value={draft.portalUsername || ''} onChange={handleChange} placeholder="Optional" />
                         </div>
                         <div className="input-group">

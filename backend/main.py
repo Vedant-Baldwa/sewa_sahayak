@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from fastapi.requests import Request
 from starlette.middleware.sessions import SessionMiddleware
+<<<<<<< Updated upstream
 from pydantic import BaseModel
 from core.config import Config
 from api.router import auth, evidence, reports, ai, agentic, chatbot
@@ -14,6 +15,19 @@ from services.aws.amazon_transcribe import (
     extract_transcript
 )
 from pydantic import BaseModel as PydanticBase
+=======
+from authlib.integrations.starlette_client import OAuth
+from dotenv import load_dotenv
+import mimetypes
+import time
+import uuid
+from aws_services.transcribe import upload_audio_to_s3, start_transcription_job, poll_transcription_job, extract_transcript
+from aws_services.location import reverse_geocode, verify_address
+from aws_services.bedrock import get_portal_routing, compile_draft
+from aws_services.router import route_complaint as local_route_complaint
+from aws_services.nova_act_scraper import extract_form_fields
+import json
+>>>>>>> Stashed changes
 import os
 import uuid
 import time
@@ -475,50 +489,22 @@ except Exception:
 
 # Feature 5 Endpoint: Cognitive Dispatcher
 @app.post("/api/route")
-def route_complaint(route_req: RouteRequest):
+def route_complaint_endpoint(route_req: RouteRequest):
     print(f"[Cognitive Dispatcher] Processing routing request: {route_req}")
-    structured_address = None
     
-    # Scenario A: High-Trust Reporting (GPS Enabled)
-    if route_req.lat is not None and route_req.lng is not None:
-        print("[Location Service] Using Reverse Geocoding...")
-        structured_address = reverse_geocode(route_req.lat, route_req.lng)
-        
-    # Scenario B: Manual Reporting (No GPS / Gallery Uploads)
-    elif route_req.state and route_req.city and route_req.address:
-        print("[Location Service] Using Geocoding Verification...")
-        structured_address = verify_address(route_req.state, route_req.city, route_req.address)
-        
-    if not structured_address:
-        if route_req.address or route_req.city or route_req.state:
-            location_string = f"{route_req.address or ''}, {route_req.city or ''}, {route_req.state or ''}".strip(", ")
-        else:
-            return {
-                "structured_address": None,
-                "routing": {
-                    "portal_name": "CPGRAMS",
-                    "portal_url": PORTALS_DB.get("CENTRAL", {}).get("CPGRAMS", "https://pgportal.gov.in/Registration"),
-                    "reasoning": "Insufficient location data provided. Routing to the central CPGRAMS portal as a default fallback."
-                }
-            }
-    else:
-        location_string = (
-            structured_address.get("Address")
-            if structured_address
-            else f"{route_req.address or ''}, {route_req.city or ''}, {route_req.state or ''}"
-        )
-        
-    print(f"[Bedrock Nova Pro] Determining portal for: {location_string}")
-    # 2 & 3: The Routing Knowledge Base & The LLM System Prompt
-    routing_result = get_portal_routing(location_string, PORTALS_DB)
+    # 1. New dynamic location routing
+    routing_result = local_route_complaint(route_req.lat, route_req.lng, route_req.address)
     
     if not routing_result:
         raise HTTPException(status_code=500, detail="Failed to route complaint")
         
+    structured_address = routing_result.get("mapped_location")
+    
     # --- Nova Act: Extract form fields from the routed portal ---
     form_fields = {}
     portal_url = routing_result.get("portal_url", "")
     portal_name = routing_result.get("portal_name", "Unknown")
+    
     if portal_url:
         try:
             print(f"[Nova Act] Scraping form fields from: {portal_name} ({portal_url})")
@@ -533,11 +519,25 @@ def route_complaint(route_req: RouteRequest):
         "form_schema": form_fields
     }
 
+
 # Feature 6 Endpoint
 @app.post("/api/draft")
 async def mock_generate_draft(data: dict):
-    print(f"[Amazon Bedrock] Generating draft for data: {data}")
-    time.sleep(2.0)
+    print(f"[Amazon Bedrock] Generating dynamic payload for data: {data}")
+    
+    # 1. Check if the portal schema was passed and compile dynamically
+    try:
+        schema = data.get("form_schema", {})
+        if schema and ("fields" in schema or "error" not in schema):
+            print("[Amazon Bedrock] Found Nova Act form schema, compiling structured draft...")
+            compiled_payload = compile_draft(data, schema)
+            return compiled_payload
+    except Exception as e:
+        print(f"Draft compilation failed: {e}")
+        
+    # 2. Fallback to generic mock text if schema extraction failed
+    print("[Amazon Bedrock] Form schema missing or failed, generating generic paragraph.")
+    time.sleep(1.0)
     
     analysis_desc = data.get("analysis", {}).get("suggested_description", "")
     transcript_desc = data.get("transcription", {}).get("transcript", "")
