@@ -30,16 +30,23 @@ jobs:
         HOST: ${{ secrets.EC2_HOST }}
         USER: ${{ secrets.EC2_USER }}
       run: |
+        if [ -z "$HOST" ] || [ -z "$SSH_KEY" ] || [ -z "$USER" ]; then
+          echo "Deployment secrets are missing. Skipping deployment."
+          exit 0
+        fi
+        
         # Sanitize HOST just in case user pasted "http://65.x.x.x"
         CLEAN_HOST=$(echo "$HOST" | sed 's|^http[s]*://||')
         
         mkdir -p ~/.ssh
         echo "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
         chmod 600 ~/.ssh/deploy_key
-        ssh-keyscan -H "$CLEAN_HOST" >> ~/.ssh/known_hosts
+        
+        # Disable strict host checking globally for this job since the IP might change
+        echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
         
         # Rsync the entire repository (excluding git/node_modules) and the built dist folder
-        rsync -avz --delete --exclude='.git' --exclude='node_modules' --exclude='.env' --exclude='*.pem' -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" ./ $USER@$CLEAN_HOST:/var/www/sewa_sahayak/
+        rsync -avz --delete --exclude='.git' --exclude='node_modules' --exclude='.env' --exclude='*.pem' -e "ssh -i ~/.ssh/deploy_key" ./ $USER@$CLEAN_HOST:/var/www/sewa_sahayak/
 
     - name: Restart Backend & Nginx on EC2
       env:
@@ -47,8 +54,17 @@ jobs:
         HOST: ${{ secrets.EC2_HOST }}
         USER: ${{ secrets.EC2_USER }}
       run: |
+        if [ -z "$HOST" ] || [ -z "$SSH_KEY" ] || [ -z "$USER" ]; then
+          echo "Deployment secrets are missing. Skipping backend restart."
+          exit 0
+        fi
+        
         CLEAN_HOST=$(echo "$HOST" | sed 's|^http[s]*://||')
-        ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key $USER@$CLEAN_HOST << 'EOF'
+        
+        # Disable strict host checking globally for this job since the IP might change
+        echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
+        
+        ssh -i ~/.ssh/deploy_key $USER@$CLEAN_HOST << 'EOF'
           cd /var/www/sewa_sahayak/backend
           
           # Install dependencies securely in venv
