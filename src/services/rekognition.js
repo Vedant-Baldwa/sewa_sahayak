@@ -13,8 +13,8 @@ export const redactMediaWithRekognition = async (mediaBlob) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/redact`, {
             method: 'POST',
-            body: formData,
-            credentials: 'include'
+            credentials: 'include',
+            body: formData
         });
 
         if (!response.ok) {

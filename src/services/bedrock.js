@@ -1,11 +1,9 @@
 /**
  * Amazon Bedrock (Nova Pro) Service - Real Backend Integration
  */
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-
-export const analyzeMediaWithBedrock = async (mediaBlob, type = 'image') => {
-    console.log(`[Amazon Bedrock Nova Pro] Sending media for real visual analysis: ${type}`);
+export const mockAnalyzeMedia = async (mediaBlob, type = 'image') => {
+    console.log(`[Amazon Bedrock Nova Pro via Python API] Sending media for analysis: ${type}`);
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
     const formData = new FormData();
     formData.append('media', mediaBlob, `capture.${type === 'image' ? 'jpg' : 'mp4'}`);
@@ -14,9 +12,8 @@ export const analyzeMediaWithBedrock = async (mediaBlob, type = 'image') => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/analyze`, {
             method: 'POST',
-            body: formData,
-            // Credentials included for session-based auth if needed
-            credentials: 'include'
+            credentials: 'include',
+            body: formData
         });
 
         if (!response.ok) {

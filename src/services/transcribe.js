@@ -1,11 +1,9 @@
 /**
  * Amazon Transcribe Service - Real Backend Integration
  */
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-
-export const transcribeAudioWithAWS = async (audioBlob, language = 'hi-IN') => {
-    console.log(`[Amazon Transcribe] Sending audio for real transcription...`);
+export const mockTranscribeAudio = async (audioBlob, language = 'hi-IN') => {
+    console.log(`[AWS Transcribe via Python API] Sending audio for transcription...`);
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
     const formData = new FormData();
     formData.append('audio', audioBlob, 'voice_note.webm');
@@ -14,8 +12,8 @@ export const transcribeAudioWithAWS = async (audioBlob, language = 'hi-IN') => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/transcribe`, {
             method: 'POST',
-            body: formData,
-            credentials: 'include'
+            credentials: 'include',
+            body: formData
         });
 
         if (!response.ok) {

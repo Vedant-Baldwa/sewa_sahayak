@@ -1,11 +1,9 @@
 /**
  * Amazon Bedrock Draft Generation Service - Real Backend Integration
  */
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-
-export const generateDraftWithBedrock = async (captureData) => {
-    console.log(`[Amazon Bedrock Draft] Generating formal complaint draft via real API...`);
+export const mockGenerateDraft = async (captureData) => {
+    console.log(`[Amazon Bedrock Draft via Python API] Generating drafted complaint...`);
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
     try {
         const response = await fetch(`${BACKEND_URL}/api/draft`, {
@@ -13,8 +11,8 @@ export const generateDraftWithBedrock = async (captureData) => {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(captureData),
-            credentials: 'include'
+            credentials: 'include',
+            body: JSON.stringify(captureData)
         });
 
         if (!response.ok) {
