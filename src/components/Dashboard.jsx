@@ -27,7 +27,8 @@ const getSeverityColor = (severity) => {
 const Dashboard = () => {
     const [clusters, setClusters] = useState([]);
     const [selectedCluster, setSelectedCluster] = useState(null);
-    const [draftRequestStatus, setDraftRequestStatus] = useState(null);
+    const [draftRequestStatus, setDraftRequestStatus] = useState('idle');
+    const [markFiledStatus, setMarkFiledStatus] = useState('idle');
     const [generatedDraft, setGeneratedDraft] = useState(null);
     const [totalEvents, setTotalEvents] = useState(0);
 
@@ -65,11 +66,47 @@ const Dashboard = () => {
                 credentials: 'include'
             });
             const data = await res.json();
-            setGeneratedDraft(data);
-            setDraftRequestStatus('done');
+            if (res.ok) {
+                setGeneratedDraft(data);
+                setDraftRequestStatus('done');
+            } else {
+                setDraftRequestStatus('idle');
+                alert("Failed to compile damage report: " + JSON.stringify(data));
+            }
         } catch (error) {
             console.error("Draft generation failed", error);
             setDraftRequestStatus('idle');
+            alert("Connection error during draft generation.");
+        }
+    };
+
+    const handleMarkFiled = async () => {
+        if (!selectedCluster) return;
+        setMarkFiledStatus('marking');
+        try {
+            const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+            const res = await fetch(`${BACKEND_URL}/api/clusters/mark_filed`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(selectedCluster),
+                credentials: 'include'
+            });
+            if (res.ok) {
+                setMarkFiledStatus('success');
+                setTimeout(() => {
+                    setSelectedCluster(null);
+                    setGeneratedDraft(null);
+                    setMarkFiledStatus('idle');
+                    fetchClusters(); // refresh map
+                }, 1500);
+            } else {
+                setMarkFiledStatus('idle');
+                alert("Failed to mark as filed");
+            }
+        } catch (error) {
+            console.error("Filing error:", error);
+            setMarkFiledStatus('idle');
+            alert("Error trying to mark complaint as filed.");
         }
     };
 

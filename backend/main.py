@@ -1,4 +1,5 @@
 import os
+import subprocess
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -308,7 +309,7 @@ async def upload_dashcam_segment(
     user = request.session.get('user')
     user_id = user.get('sub', 'anonymous') if user else 'anonymous'
 
-    print(f"[Dashcam] Received 5s segment: {segment.filename} (Lat: {lat}, Lng: {lng}) [User: {user_id}]")
+    print(f"[Dashcam] Received segment: {segment.filename} (Lat: {lat}, Lng: {lng}) [User: {user_id}]")
     
     # Save the chunk locally for the worker to process
     temp_dir = os.path.join(os.getcwd(), "temp", "dashcam")
@@ -328,10 +329,63 @@ async def upload_dashcam_segment(
     if user_id not in POTHOLE_EVENTS:
         POTHOLE_EVENTS[user_id] = []
     
-    # Queue the background processing (pass this user's events list)
-    background_tasks.add_task(process_video_segment, temp_path, metadata, reports_table, POTHOLE_EVENTS[user_id])
-    
-    return {"message": "Segment queued for AI detection", "status": "processing"}
+    # Check duration to decide if we need to split the video
+    import cv2 as _cv2
+    cap = _cv2.VideoCapture(temp_path)
+    fps = cap.get(_cv2.CAP_PROP_FPS) or 30
+    total_frames = int(cap.get(_cv2.CAP_PROP_FRAME_COUNT))
+    cap.release()
+    duration = total_frames / fps if fps > 0 else 0
+
+    SEGMENT_DURATION = 10  # seconds per chunk
+
+    if duration > SEGMENT_DURATION + 2:
+        # Split long video into SEGMENT_DURATION-second chunks using FFmpeg
+        num_segments = int(duration // SEGMENT_DURATION) + (1 if duration % SEGMENT_DURATION > 2 else 0)
+        print(f"[Dashcam] Long video detected ({duration:.1f}s). Splitting into {num_segments} segments of ~{SEGMENT_DURATION}s each.")
+
+        segment_paths = []
+        for i in range(num_segments):
+            start_time = i * SEGMENT_DURATION
+            seg_filename = f"seg{i}_{str(uuid.uuid4())[:6]}.mp4"
+            seg_path = os.path.join(temp_dir, seg_filename)
+            try:
+                subprocess.run(
+                    ["ffmpeg", "-y", "-i", temp_path,
+                     "-ss", str(start_time), "-t", str(SEGMENT_DURATION),
+                     "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-an",
+                     seg_path],
+                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=60
+                )
+                segment_paths.append(seg_path)
+            except Exception as e:
+                print(f"[Dashcam] FFmpeg segment {i} failed: {e}")
+
+        # Remove original after splitting
+        try:
+            os.remove(temp_path)
+        except Exception:
+            pass
+
+        if not segment_paths:
+            return {"message": "Failed to split video", "status": "error"}
+
+        # Queue each sub-segment for background processing
+        for seg_path in segment_paths:
+            background_tasks.add_task(
+                process_video_segment, seg_path, metadata, reports_table, POTHOLE_EVENTS[user_id]
+            )
+
+        return {
+            "message": f"Video split into {len(segment_paths)} segments, all queued for AI detection",
+            "status": "processing",
+            "segments": len(segment_paths)
+        }
+    else:
+        # Short video (≤ SEGMENT_DURATION seconds) – process directly
+        background_tasks.add_task(process_video_segment, temp_path, metadata, reports_table, POTHOLE_EVENTS[user_id])
+        return {"message": "Segment queued for AI detection", "status": "processing"}
 
 # --- Engineer 1: Database (DynamoDB Reports Table) ---
 @app.post("/api/reports/save")

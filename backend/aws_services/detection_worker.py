@@ -180,7 +180,7 @@ def process_video_segment(filepath: str, metadata: dict, reports_table=None, eve
     print(f"[Detection Worker] Metadata: {metadata}")
 
     # --- Step 1: Extract frames from the video ---
-    frames = _extract_frames(filepath, max_frames=5)
+    frames = _extract_frames(filepath, max_frames=10)
     if not frames:
         print("[Detection Worker] No frames could be extracted. Segment discarded.\n")
         _cleanup(filepath)

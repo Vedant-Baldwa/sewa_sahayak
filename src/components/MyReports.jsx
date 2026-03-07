@@ -3,7 +3,7 @@ import { Archive, Clock, MapPin, RefreshCw, Loader2 } from 'lucide-react';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
-export default function MyReports({ onClose }) {
+export default function MyReports() {
     const [reports, setReports] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -41,22 +41,15 @@ export default function MyReports({ onClose }) {
         <div className="glass-panel" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
                 <h2 className="heading-2">My Reports</h2>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button
-                        className="btn btn-secondary"
-                        style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-                        onClick={fetchReports}
-                        disabled={loading}
-                        title="Refresh reports"
-                    >
-                        <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
-                    </button>
-                    {onClose && (
-                        <button className="btn btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }} onClick={onClose}>
-                            New Report
-                        </button>
-                    )}
-                </div>
+                <button
+                    className="btn btn-secondary"
+                    style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    onClick={fetchReports}
+                    disabled={loading}
+                    title="Refresh reports"
+                >
+                    <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
+                </button>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>

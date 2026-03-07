@@ -273,32 +273,12 @@ function App() {
 
             <Route path="/report" element={
               user ? (
-                <>
-                  <ReportPage
-                    onPhotoClick={() => photoInputRef.current.click()}
-                    onVideoClick={() => videoInputRef.current.click()}
-                    onAudioRecorded={onAudioRecorded}
-                    isTranscribing={isTranscribing}
-                    isRedacting={isRedacting}
-                    isAnalyzing={isAnalyzing}
-                    isLocating={isLocating}
-                  />
-                  {/* Provide evidence list below the manual report tool */}
-                  {captures.length > 0 && (
-                    <div className="glass-panel mx-auto mt-6" style={{ maxWidth: '600px', padding: '1.5rem' }}>
-                      <h3 className="heading-3 mb-4">Captured Evidence waiting for Review</h3>
-                      {captures.map(capture => (
-                        <div key={capture.id} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem', borderRadius: '12px', background: 'rgba(255,255,255,0.5)', marginBottom: '0.5rem' }}>
-                          {/* Minimized view of the evidence block we had */}
-                          <div style={{ flex: 1 }}>
-                            <p className="font-bold">{capture.type} capture</p>
-                            <button className="btn btn-primary" onClick={() => setSelectedCaptureForDraft(capture)}>Generate Report</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
+                <ReportPage
+                  onVideoClick={() => videoInputRef.current.click()}
+                  isRedacting={isRedacting}
+                  isAnalyzing={isAnalyzing}
+                  isLocating={isLocating}
+                />
               ) : <Navigate to="/login" />
             } />
 
