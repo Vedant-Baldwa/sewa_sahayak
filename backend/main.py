@@ -9,7 +9,7 @@ from fastapi import FastAPI, File, UploadFile, Form
 from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
@@ -17,11 +17,13 @@ from dotenv import load_dotenv
 import mimetypes
 import time
 import uuid
+import io
 from aws_services.transcribe import upload_audio_to_s3, start_transcription_job, poll_transcription_job, extract_transcript
 from aws_services.location import reverse_geocode, verify_address
 from aws_services.bedrock import get_portal_routing
 from aws_services.nova_act_scraper import extract_form_fields
 from aws_services.detection_worker import process_video_segment
+from aws_services.rekognition import RekognitionService
 import json
 import os
 import traceback
@@ -86,14 +88,16 @@ BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 try:
     s3_client = boto3.client('s3', region_name=AWS_REGION)
     cognito_client = boto3.client('cognito-idp', region_name=AWS_REGION)
-    rekognition_client = boto3.client('rekognition', region_name=AWS_REGION)
+    rekognition_service = RekognitionService(region_name=AWS_REGION)
+    # Maintain the attribute for backward compatibility if needed, though we'll use rekognition_service
+    rekognition_client = rekognition_service.client 
     dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
     reports_table = dynamodb.Table(DYNAMODB_TABLE_NAME)
     users_table = dynamodb.Table(USERS_TABLE_NAME)
     print("AWS Services (S3, Cognito, Rekognition, DynamoDB) configured successfully.")
 except Exception as e:
     print(f"Warning: Failed to initialize AWS clients. Ensure credentials are set. Error: {e}")
-    s3_client, cognito_client, rekognition_client, reports_table, users_table = None, None, None, None, None
+    s3_client, cognito_client, rekognition_client, rekognition_service, reports_table, users_table = None, None, None, None, None, None
 
 # --- Per-user in-memory event store for detected potholes ---
 # Dict mapping userId -> list of events.  Each user only sees their own.
@@ -282,14 +286,29 @@ async def upload_evidence_to_s3(evidence: UploadFile = File(...), ticketId: str 
     
     try:
         s3_key = f"reports/{ticketId}/{evidence.filename}"
-        s3_client.upload_fileobj(
-            evidence.file,
-            S3_BUCKET_NAME,
-            s3_key,
-            ExtraArgs={'ContentType': evidence.content_type}
+        
+        file_content = await evidence.read()
+        final_content = file_content
+        
+        # Automatic PII Redaction for Images
+        if evidence.content_type and "image" in evidence.content_type.lower() and rekognition_service:
+            try:
+                print(f"[Rekognition] Redacting PII from evidence: {evidence.filename}")
+                redacted_bytes, faces, plates = rekognition_service.redact_pii(file_content)
+                final_content = redacted_bytes
+                print(f"[Rekognition] Redaction complete: {faces} faces, {plates} text regions.")
+            except Exception as e:
+                print(f"[Rekognition] Redaction failed, uploading original: {e}")
+                final_content = file_content
+
+        s3_client.put_object(
+            Bucket=S3_BUCKET_NAME,
+            Key=s3_key,
+            Body=final_content,
+            ContentType=evidence.content_type
         )
         return {
-            "message": "Upload successful",
+            "message": "Upload successful (Redaction applied if image)",
             "s3_uri": f"s3://{S3_BUCKET_NAME}/{s3_key}"
         }
     except Exception as e:
@@ -615,78 +634,42 @@ async def mock_redact(media: UploadFile = File(...)):
     # Read the file bytes
     image_bytes = await media.read()
     
-    if not rekognition_client:
-        print("[Mock Rekognition] Returning unredacted mock image because client is None.")
+    if not rekognition_service:
+        print("[Mock Rekognition] Returning unredacted mock image because service is None.")
         return StreamingResponse(io.BytesIO(image_bytes), media_type=media.content_type, headers={
             "X-Faces-Redacted": "0", "X-Plates-Redacted": "0"
         })
         
     try:
-        # Detect Faces
-        face_response = rekognition_client.detect_faces(Image={'Bytes': image_bytes})
-        faces = face_response.get('FaceDetails', [])
+        redacted_bytes, faces_count, plates_count = rekognition_service.redact_pii(image_bytes)
         
-        # Detect Text
-        text_response = rekognition_client.detect_text(Image={'Bytes': image_bytes})
-        texts = text_response.get('TextDetections', [])
+        headers = {
+            "X-Faces-Redacted": str(faces_count),
+            "X-Plates-Redacted": str(plates_count),
+            "Access-Control-Expose-Headers": "X-Faces-Redacted, X-Plates-Redacted"
+        }
         
-        # Only care about text lines that look like numbers/plates for this mock
-        # For a full implementation, could check bounding boxes specifically or use Rekognition text categorization
-        plates = [t for t in texts if t['Type'] == 'LINE']
-        
-        # Open Image with Pillow
-        try:
-            image = Image.open(io.BytesIO(image_bytes))
-            draw = ImageDraw.Draw(image)
-            width, height = image.size
-            
-            # Draw black boxes over faces
-            for face in faces:
-                box = face['BoundingBox']
-                left = width * box['Left']
-                top = height * box['Top']
-                right = left + (width * box['Width'])
-                bottom = top + (height * box['Height'])
-                draw.rectangle([left, top, right, bottom], fill="black")
-                
-            # Draw black boxes over text/plates
-            for text in plates:
-                # In a real app we would heuristically check if text resembles A-Z 0-9 license plate
-                # For demonstration, we'll redact all detected LINE texts.
-                box = text['Geometry']['BoundingBox']
-                left = width * box['Left']
-                top = height * box['Top']
-                right = left + (width * box['Width'])
-                bottom = top + (height * box['Height'])
-                draw.rectangle([left, top, right, bottom], fill="black")
-                
-            # Save the redacted image to a bytes buffer
-            output_buffer = io.BytesIO()
-            img_format = image.format if image.format else "JPEG"
-            image.save(output_buffer, format=img_format)
-            output_buffer.seek(0)
-            
-            headers = {
-                "X-Faces-Redacted": str(len(faces)),
-                "X-Plates-Redacted": str(len(plates)),
-                "Access-Control-Expose-Headers": "X-Faces-Redacted, X-Plates-Redacted"
-            }
-            
-            print(f"[Amazon Rekognition] Successfully redacted {len(faces)} faces and {len(plates)} text regions.")
-            return StreamingResponse(output_buffer, media_type=media.content_type, headers=headers)
-            
-        except Exception as img_e:
-            print(f"Pillow Image Error: {img_e}")
-            # If it's a video or unrecognized format, skip redaction
-            return StreamingResponse(io.BytesIO(image_bytes), media_type=media.content_type, headers={
-                "X-Faces-Redacted": "0", "X-Plates-Redacted": "0"
-            })
+        print(f"[Amazon Rekognition] Successfully blurred {faces_count} faces and {plates_count} personal info regions.")
+        return StreamingResponse(io.BytesIO(redacted_bytes), media_type=media.content_type, headers=headers)
             
     except Exception as e:
         print(f"Rekognition Error: {e}")
         return StreamingResponse(io.BytesIO(image_bytes), media_type=media.content_type, headers={
             "X-Faces-Redacted": "0", "X-Plates-Redacted": "0"
         })
+        
+@app.post("/api/redact/live")
+async def live_redact_coords(media: UploadFile = File(...)):
+    """Returns only coordinates for live frontend blurring."""
+    if not rekognition_service:
+        return {"faces": [], "text": []}
+    
+    try:
+        image_bytes = await media.read()
+        boxes = rekognition_service.get_pii_boxes(image_bytes)
+        return boxes
+    except Exception:
+        return {"faces": [], "text": []}
 
 class RouteRequest(BaseModel):
     lat: float | None = None

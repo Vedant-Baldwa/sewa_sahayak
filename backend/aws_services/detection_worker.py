@@ -10,6 +10,7 @@ import numpy as np
 
 from aws_services.location import reverse_geocode
 from aws_services.bedrock import get_portal_routing
+from aws_services.rekognition import RekognitionService
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,6 +28,7 @@ SAGEMAKER_ENDPOINT = os.getenv("SAGEMAKER_ENDPOINT_NAME", "road-damage-yolov8-en
 SAGEMAKER_REGION = os.getenv("SAGEMAKER_REGION", os.getenv("AWS_REGION", "ap-south-1"))
 
 _sagemaker_client = None
+_rekognition_service = None
 
 def _get_sagemaker_client():
     """Lazily initialise the SageMaker Runtime client."""
@@ -39,6 +41,13 @@ def _get_sagemaker_client():
             aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
         )
     return _sagemaker_client
+
+def _get_rekognition_service():
+    """Lazily initialise the Rekognition Service."""
+    global _rekognition_service
+    if _rekognition_service is None:
+        _rekognition_service = RekognitionService()
+    return _rekognition_service
 
 
 def _extract_frames(video_path: str, max_frames: int = 5) -> list:
@@ -233,9 +242,29 @@ def process_video_segment(filepath: str, metadata: dict, reports_table=None, eve
             ["ffmpeg", "-i", filepath, "-ss", "00:00:01", "-to", "00:00:03", "-c", "copy", clip_path],
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
-        print(f"[Detection Worker] FFmpeg Extracted Clip: {clip_filename}")
+        print(f"[Detection Worker] FFmpeg Extracted Raw Clip: {clip_filename}")
+        
+        # Redact the clip using Rekognition
+        try:
+            print(f"[Detection Worker] Starting PII redaction for evidence clip...")
+            redacted_clip_path = clip_path.replace(".mp4", "_redacted.mp4")
+            rekog = _get_rekognition_service()
+            if rekog.redact_video(clip_path, redacted_clip_path):
+                # Final pass with FFmpeg to ensure web compatibility (H.264)
+                final_clip_path = clip_path.replace(".mp4", "_final.mp4")
+                subprocess.run(
+                    ["ffmpeg", "-y", "-i", redacted_clip_path, "-vcodec", "libx264", "-crf", "28", "-an", final_clip_path],
+                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                os.remove(clip_path)
+                os.remove(redacted_clip_path)
+                os.rename(final_clip_path, clip_path)
+                print(f"[Detection Worker] PII Redaction complete for clip.")
+        except Exception as e:
+            print(f"[Detection Worker] Video redaction failed: {e}")
+
     except (subprocess.CalledProcessError, FileNotFoundError):
-        print(f"[Detection Worker] FFmpeg unavailable. Copying full segment as clip.")
+        print(f"[Detection Worker] FFmpeg unavailable or failed. Using original segment.")
         shutil.copy2(filepath, clip_path)
 
     # --- Step 4.5: Best Images Extraction ---
@@ -244,13 +273,23 @@ def process_video_segment(filepath: str, metadata: dict, reports_table=None, eve
     best_frames = frame_results[:3]
     
     extracted_images = []
+    rekog = _get_rekognition_service()
     for idx, f_res in enumerate(best_frames):
         if not f_res["preds"]: continue
         drawn_frame = _draw_boxes(f_res["frame"], f_res["preds"])
+        
+        # Redact PII (Faces, License Plates) using Amazon Rekognition
+        try:
+            print(f"[Detection Worker] Redacting PII in extracted image {idx+1}...")
+            final_frame = rekog.redact_image_ndarray(drawn_frame)
+        except Exception as e:
+            print(f"[Detection Worker] Redaction failed for image {idx+1}: {e}")
+            final_frame = drawn_frame
+
         img_id = str(uuid.uuid4())[:8]
         img_filename = f"img_{img_id}.jpg"
         img_path = os.path.join(os.path.dirname(filepath), img_filename)
-        cv2.imwrite(img_path, drawn_frame)
+        cv2.imwrite(img_path, final_frame)
         extracted_images.append(f"/temp/dashcam/{img_filename}")
 
     # --- Step 5: Reverse-geocode GPS coordinates ---
