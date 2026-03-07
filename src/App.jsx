@@ -302,7 +302,7 @@ function App() {
     try {
       const result = await transcribeAudioWithAWS(audioBlob, currentLang);
       await handleMediaCapture(audioBlob, 'audio', { transcription: result });
-    } catch (err) {
+    } catch {
       await handleMediaCapture(audioBlob, 'audio');
     } finally {
       setIsTranscribing(false);

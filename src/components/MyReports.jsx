@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { openDB } from 'idb';
 import { initDB } from '../utils/db';
 import { Archive, Clock, MapPin, ArrowLeft, ChevronRight, FileText } from 'lucide-react';
 

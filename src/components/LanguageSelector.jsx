@@ -19,18 +19,6 @@ export default function LanguageSelector({ inNavbar = false }) {
     const [currentL, setCurrentL] = useState('en');
     const [isDetecting, setIsDetecting] = useState(false);
 
-    useEffect(() => {
-        // Init language from cookie
-        const cookieValue = document.cookie.split('; ').find(row => row.startsWith('googtrans='));
-        if (cookieValue) {
-            const lang = cookieValue.split('/').pop();
-            if (lang) setCurrentL(lang);
-        } else {
-            // If no language set, try GPS Auto-Detection
-            detectLocalLanguage();
-        }
-    }, []);
-
     const detectLocalLanguage = () => {
         if (!navigator.geolocation) return;
 
@@ -51,6 +39,19 @@ export default function LanguageSelector({ inNavbar = false }) {
             setIsDetecting(false);
         }, () => setIsDetecting(false));
     };
+
+    useEffect(() => {
+        // Init language from cookie
+        const cookieValue = document.cookie.split('; ').find(row => row.startsWith('googtrans='));
+        if (cookieValue) {
+            const lang = cookieValue.split('/').pop();
+            if (lang) setCurrentL(lang);
+        } else {
+            // If no language set, try GPS Auto-Detection
+            detectLocalLanguage();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const changeLanguage = (langCode) => {
         setCurrentL(langCode);

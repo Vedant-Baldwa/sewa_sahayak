@@ -292,10 +292,10 @@ export default function AIChatbot({ userAuthenticated, isOpen, onToggle }) {
                                 ? { ...s, messages: [...newMsgs, { role: 'assistant', content: data.reply }] }
                                 : s
                         ));
-                    } catch (e) {
+                    } catch {
                         updateMessages({ role: 'assistant', content: "I heard you, but I'm having trouble connecting to the AI cluster. Try again!" });
                     }
-                } catch (e) {
+                } catch {
                     const failMsg = { role: 'user', content: "Shared a voice report (Transcription Failed)." };
                     updateMessages(failMsg);
                     updateMessages({ role: 'assistant', content: "Sorry, I couldn't properly transcribe that audio. Could you try speaking again or typing?" });

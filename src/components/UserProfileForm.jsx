@@ -33,7 +33,7 @@ export default function UserProfileForm({ onComplete, onCancel, backendUrl, init
             } else {
                 setError('Failed to save profile. Please try again.');
             }
-        } catch (err) {
+        } catch {
             setError('Connection error. Check your network.');
         } finally {
             setLoading(false);

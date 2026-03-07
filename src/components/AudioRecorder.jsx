@@ -54,15 +54,17 @@ export default function AudioRecorder({ onRecordingComplete, isRecordingProp, on
     };
 
     // If controlled externally (like holding a card), we sync with prop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => {
         if (isRecordingProp === true) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             startRecording();
         } else if (isRecordingProp === false && mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
             mediaRecorderRef.current.stop();
             if (onStop) onStop();
             else setInternalRecording(false);
         }
-    }, [isRecordingProp]);
+    }, [isRecordingProp]); // intentional: only react to prop changes
 
     if (isProcessing) {
         return (

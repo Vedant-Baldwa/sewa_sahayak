@@ -1,4 +1,3 @@
-import { openDB } from 'idb';
 import { initDB } from '../utils/db';
 
 /**
