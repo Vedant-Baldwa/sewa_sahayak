@@ -769,8 +769,10 @@ async def mock_generate_draft(data: dict):
         "description": f"To the concerned authority,\n\nI am reporting a issue regarding civic hazard.\n\nDetails:\n{description}\n\nPlease address this at your earliest convenience.\n\nThank you.",
     }
 
-# Serve static assets from Vite dist folder
-app.mount("/assets", StaticFiles(directory="../dist/assets"), name="assets")
+# Serve static assets from Vite dist folder (only if built)
+_dist_assets_dir = os.path.join(os.path.dirname(__file__), "..", "dist", "assets")
+if os.path.isdir(_dist_assets_dir):
+    app.mount("/assets", StaticFiles(directory=_dist_assets_dir), name="assets")
 
 # Serve the temp directory for clips and extracted images
 import os
@@ -1090,15 +1092,23 @@ def generate_pothole_complaint(req: ComplaintRequest):
     }
 
 # Optional: serve public files like images/icons if they exist in dist root
+_dist_dir = os.path.join(os.path.dirname(__file__), "..", "dist")
+
 @app.get("/{file_name:path}")
 async def serve_static_root(file_name: str):
     if file_name.startswith("api/"):
         return
     
-    file_path = os.path.join("../dist", file_name)
+    if not os.path.isdir(_dist_dir):
+        return {"detail": "Frontend not built. Use Vite dev server at localhost:5173"}
+    
+    file_path = os.path.join(_dist_dir, file_name)
     if os.path.isfile(file_path):
         return FileResponse(file_path)
     
-    # SPA fallback: Serve index.html for unknown routes
-    return FileResponse("../dist/index.html")
+    index_path = os.path.join(_dist_dir, "index.html")
+    if os.path.isfile(index_path):
+        return FileResponse(index_path)
+    
+    return {"detail": "Not found"}
 

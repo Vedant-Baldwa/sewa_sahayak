@@ -24,39 +24,39 @@ const InteractiveScene = () => {
             <div ref={sceneRef} className="object-3d">
                 <div className="layer layer-1"></div>
                 <div className="layer layer-2">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '1rem', marginBottom: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(129,140,248,0.15)', paddingBottom: '1rem', marginBottom: '1rem' }}>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <div style={{ width: '12px', height: '12px', background: 'rgba(255,255,255,0.1)', borderRadius: '50%' }}></div>
-                            <div style={{ fontSize: '0.8rem', color: '#888', letterSpacing: '2px' }}>VISION_CORE</div>
+                            <div style={{ width: '12px', height: '12px', background: 'rgba(129,140,248,0.4)', borderRadius: '50%' }}></div>
+                            <div style={{ fontSize: '0.8rem', color: '#94a3b8', letterSpacing: '2px' }}>VISION_CORE</div>
                         </div>
-                        <div style={{ width: '40px', height: '16px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)' }}></div>
+                        <div style={{ width: '40px', height: '16px', borderRadius: '8px', background: 'rgba(129,140,248,0.15)' }}></div>
                     </div>
 
                     <div style={{ flex: 1, display: 'flex', gap: '1rem' }}>
-                        <div style={{ flex: 1, background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.1)', position: 'relative', overflow: 'hidden' }}>
-                            <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '2px', background: '#fff', boxShadow: '0 0 10px #fff', animation: 'scan 2s infinite linear' }}></div>
+                        <div style={{ flex: 1, background: 'rgba(129,140,248,0.05)', borderRadius: '8px', border: '1px dashed rgba(129,140,248,0.2)', position: 'relative', overflow: 'hidden' }}>
+                            <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '2px', background: 'linear-gradient(90deg, #818cf8, #c084fc)', boxShadow: '0 0 15px rgba(129,140,248,0.5)', animation: 'scan 2s infinite linear' }}></div>
                         </div>
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            <div style={{ width: '100%', height: '30px', borderRadius: '6px', background: 'rgba(255,255,255,0.08)' }}></div>
-                            <div style={{ width: '80%', height: '20px', borderRadius: '4px', background: 'rgba(255,255,255,0.04)' }}></div>
-                            <div style={{ width: '60%', height: '20px', borderRadius: '4px', background: 'rgba(255,255,255,0.02)' }}></div>
+                            <div style={{ width: '100%', height: '30px', borderRadius: '6px', background: 'linear-gradient(90deg, rgba(129,140,248,0.15), rgba(168,85,247,0.1))' }}></div>
+                            <div style={{ width: '80%', height: '20px', borderRadius: '4px', background: 'rgba(129,140,248,0.08)' }}></div>
+                            <div style={{ width: '60%', height: '20px', borderRadius: '4px', background: 'rgba(129,140,248,0.04)' }}></div>
                         </div>
                     </div>
                 </div>
                 <div className="layer layer-3">
                     <div className="glass-panel" style={{
                         padding: '1rem 1.5rem',
-                        background: 'rgba(255,255,255,0.95)',
-                        color: '#000',
+                        background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                        color: '#fff',
                         borderRadius: '100px',
                         fontWeight: '600',
                         fontSize: '0.85rem',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
-                        boxShadow: '0 10px 40px rgba(0,0,0,0.5), 0 0 30px rgba(255,255,255,0.2)'
+                        boxShadow: '0 10px 40px rgba(99,102,241,0.4), 0 0 30px rgba(139,92,246,0.3)'
                     }}>
-                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }}></div>
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#34d399' }}></div>
                         Live Redaction Active
                     </div>
                 </div>
@@ -70,33 +70,36 @@ const FeatureFeature = ({ icon, title, description, delay }) => (
     <div className={`card-3d reveal`} style={{ animationDelay: `${delay}s`, flex: '1 1 300px' }}>
         <div style={{
             width: '40px', height: '40px',
-            borderRadius: '8px',
-            background: 'var(--color-surface)',
-            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '10px',
+            background: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(168,85,247,0.1))',
+            border: '1px solid rgba(129,140,248,0.2)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             marginBottom: '1.5rem',
-            color: '#fff'
+            color: 'var(--color-primary)'
         }}>
             {icon}
         </div>
-        <h3 style={{ fontSize: '1.25rem', marginBottom: '0.75rem', fontWeight: 500 }}>{title}</h3>
+        <h3 style={{ fontSize: '1.25rem', marginBottom: '0.75rem', fontWeight: 600 }}>{title}</h3>
         <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem', lineHeight: 1.6 }}>{description}</p>
     </div>
 );
 
 const Home = ({ user }) => {
     return (
-        <div style={{ color: 'var(--color-text-main)', background: 'var(--color-bg)', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ color: 'var(--color-text-main)', background: 'var(--color-bg)', minHeight: '100vh', display: 'flex', flexDirection: 'column', overflowX: 'hidden', width: '100%', maxWidth: '100vw' }}>
 
             {/* Top Atmospheric Glow */}
             <div style={{
-                position: 'fixed', top: '-10%', left: '50%', transform: 'translateX(-50%)',
-                width: '1000px', height: '500px',
-                background: 'radial-gradient(ellipse at top, rgba(255, 255, 255, 0.05), transparent 70%)',
+                position: 'fixed', top: '-15%', left: '50%', transform: 'translateX(-50%)',
+                width: '800px', height: '500px',
+                background: 'radial-gradient(ellipse at top, rgba(99, 102, 241, 0.15), rgba(168, 85, 247, 0.08) 40%, transparent 70%)',
                 pointerEvents: 'none', zIndex: 0
             }}></div>
 
-            <main className="app-container" style={{ flex: 1, paddingTop: '10rem', paddingBottom: '6rem' }}>
+            <main className="app-container" style={{ flex: 1, paddingBottom: '6rem' }}>
+
+                {/* Spacer to push content below fixed navbar */}
+                <div style={{ height: '120px' }}></div>
 
                 {/* 1. Typography Heavy Hero Section */}
                 <section style={{
@@ -111,23 +114,30 @@ const Home = ({ user }) => {
                 }}>
                     <div className="reveal" style={{
                         display: 'inline-flex', alignItems: 'center', gap: '8px',
-                        border: '1px solid rgba(255,255,255,0.1)',
+                        border: '1px solid rgba(129,140,248,0.25)',
+                        background: 'rgba(129,140,248,0.08)',
                         padding: '6px 16px', borderRadius: '100px', fontSize: '0.8rem', fontWeight: '500',
-                        marginBottom: '2rem'
+                        marginBottom: '2rem',
+                        color: 'var(--color-primary)',
+                        alignSelf: 'center',
+                        maxWidth: '90vw',
+                        whiteSpace: 'nowrap'
                     }}>
                         Sahayak System 2.0
-                        <ArrowUpRight size={14} color="#888" />
+                        <ArrowUpRight size={14} color="#818cf8" />
                     </div>
 
                     <h1 className="reveal delay-1" style={{
-                        fontSize: 'clamp(3.5rem, 8vw, 6.5rem)',
+                        fontSize: 'clamp(2.5rem, 8vw, 6.5rem)',
                         lineHeight: 1.05,
-                        fontWeight: 600,
+                        fontWeight: 700,
                         letterSpacing: '-0.04em',
-                        marginBottom: '1.5rem'
+                        marginBottom: '1.5rem',
+                        wordBreak: 'break-word',
+                        overflowWrap: 'break-word'
                     }}>
                         Infrastructure.<br />
-                        <span style={{ color: 'var(--color-text-muted)' }}>Automated.</span>
+                        <span style={{ background: 'var(--gradient-hero)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Automated.</span>
                     </h1>
 
                     <p className="reveal delay-2" style={{
@@ -190,19 +200,22 @@ const Home = ({ user }) => {
                     </div>
                 </section>
 
-                {/* 4. Minimalist CTA Section */}
+                {/* 4. CTA Section */}
                 <section className="reveal" style={{
                     width: '100%',
                     padding: '8rem 2rem',
                     borderRadius: '24px',
-                    border: '1px solid rgba(255,255,255,0.05)',
-                    background: 'linear-gradient(180deg, rgba(255,255,255,0.02) 0%, transparent 100%)',
+                    border: '1px solid rgba(129,140,248,0.15)',
+                    background: 'linear-gradient(180deg, rgba(99,102,241,0.06) 0%, rgba(168,85,247,0.03) 50%, transparent 100%)',
                     textAlign: 'center',
                     display: 'flex',
                     flexDirection: 'column',
-                    alignItems: 'center'
+                    alignItems: 'center',
+                    position: 'relative',
+                    overflow: 'hidden'
                 }}>
-                    <h2 style={{ fontSize: 'clamp(2.5rem, 5vw, 3.5rem)', fontWeight: 600, marginBottom: '1.5rem', letterSpacing: '-0.03em' }}>Ready to deploy?</h2>
+                    <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: '300px', height: '1px', background: 'linear-gradient(90deg, transparent, rgba(129,140,248,0.5), transparent)' }}></div>
+                    <h2 style={{ fontSize: 'clamp(2.5rem, 5vw, 3.5rem)', fontWeight: 700, marginBottom: '1.5rem', letterSpacing: '-0.03em' }}>Ready to deploy?</h2>
                     <p style={{ color: 'var(--color-text-muted)', fontSize: '1.2rem', marginBottom: '3rem', maxWidth: '500px' }}>
                         Join thousands of autonomous nodes improving the city grid. Setup takes less than a minute.
                     </p>
@@ -214,20 +227,20 @@ const Home = ({ user }) => {
             </main>
 
             <footer style={{
-                borderTop: '1px solid rgba(255,255,255,0.05)',
+                borderTop: '1px solid rgba(129,140,248,0.1)',
                 padding: '3rem 2rem',
                 color: 'var(--color-text-muted)',
                 fontSize: '0.875rem'
             }}>
                 <div className="app-container flex-between" style={{ flexWrap: 'wrap', gap: '1rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff' }}>
-                        <div style={{ width: '12px', height: '12px', background: '#fff', borderRadius: '2px' }}></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-text-main)' }}>
+                        <div style={{ width: '12px', height: '12px', background: 'var(--gradient-btn)', borderRadius: '3px' }}></div>
                         <span style={{ fontWeight: 600, letterSpacing: '-0.02em' }}>Sewa Sahayak Platform</span>
                     </div>
                     <div style={{ display: 'flex', gap: '2rem' }}>
-                        <span style={{ cursor: 'pointer', hover: { color: '#fff' } }}>Documentation</span>
-                        <span style={{ cursor: 'pointer', hover: { color: '#fff' } }}>Security</span>
-                        <span style={{ cursor: 'pointer', hover: { color: '#fff' } }}>Terms</span>
+                        <span style={{ cursor: 'pointer' }}>Documentation</span>
+                        <span style={{ cursor: 'pointer' }}>Security</span>
+                        <span style={{ cursor: 'pointer' }}>Terms</span>
                     </div>
                 </div>
             </footer>

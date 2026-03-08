@@ -70,20 +70,51 @@ const Navbar = ({ user, onLogout }) => {
 
             <style dangerouslySetInnerHTML={{
                 __html: `
+                .nav-premium {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    z-index: 100;
+                    padding: 1rem 0;
+                    transition: all 0.3s ease;
+                    background: transparent;
+                }
+                .nav-premium.scrolled {
+                    background: rgba(10, 15, 30, 0.85);
+                    backdrop-filter: blur(16px);
+                    border-bottom: 1px solid rgba(129, 140, 248, 0.1);
+                    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+                    padding: 0.6rem 0;
+                }
+                .navbar-brand {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    text-decoration: none;
+                }
                 .nav-link {
                     text-decoration: none;
-                    font-weight: 600;
-                    font-size: 0.95rem;
+                    font-weight: 500;
+                    font-size: 0.9rem;
                     display: flex;
                     align-items: center;
                     gap: 8px;
-                    transition: 0.3s;
+                    transition: all 0.3s ease;
+                    color: var(--color-text-muted) !important;
                 }
                 .nav-link:hover {
-                    opacity: 0.8;
+                    color: var(--color-primary) !important;
+                }
+                .nav-link.active {
+                    color: var(--color-primary) !important;
                 }
                 @media (max-width: 600px) {
                     .hide-mobile { display: none; }
+                    .text-gradient { font-size: 1.1rem !important; letter-spacing: 0 !important; }
+                    .navbar-brand svg { width: 22px !important; height: 22px !important; }
+                    .btn-premium { padding: 0.4rem 0.8rem !important; font-size: 0.8rem !important; }
+                    .app-container { padding: 0 1rem !important; gap: 8px; }
                 }
             `}} />
         </header>
