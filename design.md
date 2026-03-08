@@ -2,9 +2,9 @@
 
 ## Overview
 
-Sewa Sahayak is a civic-tech solution that leverages Amazon Bedrock's multi-modal AI capabilities to automate road damage reporting to Indian government portals. The system addresses the "Reporting Wall" problem by acting as an intelligent intermediary that processes citizen-submitted evidence (video/voice) and automatically fills government forms using agentic web automation.
+Sewa Sahayak is a civic-tech solution that leverages Amazon Bedrock's multi-modal AI capabilities to streamline road damage reporting to Indian government portals. The system addresses the "Reporting Wall" problem by processing citizen-submitted evidence (dashcam video, voice, photos) and generating structured, data-rich report drafts that users can review and submit.
 
-The system combines Amazon Bedrock LLMs for multi-modal analysis with Amazon Nova Act for browser automation, creating a seamless bridge between citizens and government reporting systems. By reducing reporting time from 15+ minutes to under 3 minutes, the system aims to increase civic participation in infrastructure maintenance.
+The system combines Amazon Bedrock (Nova Pro) for multi-modal analysis, Amazon Rekognition for visual detection and PII redaction, and Amazon Transcribe for voice processing. By reducing reporting time from 15+ minutes to under 3 minutes and providing an interactive map-based interface, the system aims to increase civic participation in infrastructure maintenance.
 
 ## Architecture
 
@@ -12,215 +12,333 @@ The system combines Amazon Bedrock LLMs for multi-modal analysis with Amazon Nov
 
 ```mermaid
 graph TB
-    subgraph "User Interface Layer"
-        UI[Mobile Web App]
-        PWA[Progressive Web App]
+    subgraph "Client Layer (PWA)"
+        UI[React + Vite App]
+        MAP[Leaflet Interactive Map]
+        OFFLINE[IndexedDB Offline Storage]
     end
     
-    subgraph "API Gateway & Authentication"
-        AG[Amazon API Gateway]
-        AUTH[AWS Cognito]
-    end
-    
-    subgraph "Core Processing Layer"
-        ORCH[AWS Step Functions]
-        LAMBDA[AWS Lambda Functions]
+    subgraph "Backend API (FastAPI)"
+        API[REST API Router]
+        AUTH[OAuth 2.0 Handler]
+        SESSION[Session Middleware]
     end
     
     subgraph "AI/ML Services"
-        BEDROCK[Amazon Bedrock LLMs]
+        BEDROCK[Amazon Bedrock · Nova Pro]
         REKOGNITION[Amazon Rekognition]
-    end
-    
-    subgraph "Web Automation"
-        NOVA_ACT[Amazon Nova Act]
-        AUTOMATION[Browser Automation Engine]
+        TRANSCRIBE[Amazon Transcribe]
+        LOCATION[Amazon Location Service]
     end
     
     subgraph "Data & Storage"
-        S3[Amazon S3]
-        DYNAMO[Amazon DynamoDB]
-        SECRETS[AWS Secrets Manager]
+        S3[S3 Evidence Vault]
+        DYNAMO[DynamoDB Tables]
+        COGNITO[AWS Cognito User Pool]
     end
     
-    subgraph "Government Portals"
-        MUNICIPAL[Municipal Portals]
-        STATE[State Portals]
-        CENTRAL[Central Portals]
+    subgraph "Processing Pipeline"
+        VIDEO[Video Segmentation · FFmpeg]
+        FRAME[Frame Extraction · OpenCV]
+        PII[PII Redaction · Pillow]
     end
     
-    UI --> AG
-    PWA --> AG
-    AG --> AUTH
-    AG --> ORCH
-    ORCH --> LAMBDA
-    LAMBDA --> BEDROCK
-    LAMBDA --> REKOGNITION
-    LAMBDA --> NOVA_ACT
-    NOVA_ACT --> AUTOMATION
-    AUTOMATION --> MUNICIPAL
-    AUTOMATION --> STATE
-    AUTOMATION --> CENTRAL
-    LAMBDA --> S3
-    LAMBDA --> DYNAMO
-    LAMBDA --> SECRETS
+    UI --> API
+    MAP --> API
+    OFFLINE --> API
+    API --> AUTH
+    AUTH --> COGNITO
+    API --> VIDEO
+    VIDEO --> FRAME
+    FRAME --> REKOGNITION
+    REKOGNITION --> BEDROCK
+    API --> TRANSCRIBE
+    API --> LOCATION
+    API --> PII
+    BEDROCK --> DYNAMO
+    API --> S3
+    API --> DYNAMO
 ```
 
 ### Component Architecture
 
-The system follows a microservices architecture with the following key components:
+The system follows a layered architecture with the following key components:
 
-1. **Evidence Capture Module**: Handles multi-modal input processing
-2. **Bedrock Analysis Agent**: Performs AI analysis using Bedrock LLMs
-3. **Portal Router**: Determines appropriate government portal
-4. **Web Bridge Agent**: Automates form filling using Nova Act
-5. **Privacy Engine**: Handles PII redaction and data protection
-6. **Human Loop Interface**: Manages user verification and control
+1. **Dashcam Detection Pipeline**: Processes video uploads with FFmpeg segmentation and Rekognition analysis
+2. **Bedrock Analysis Engine**: Multi-modal AI analysis for damage assessment and portal routing
+3. **Interactive Map Module**: Leaflet-based clustering and visualization of detected potholes
+4. **Voice Transcription Service**: Regional language support via Amazon Transcribe
+5. **Privacy Engine**: PII redaction using Rekognition and image processing
+6. **Location Intelligence**: GPS and address handling via Amazon Location Service
+7. **Offline-First Storage**: IndexedDB-based queue for evidence capture without connectivity
 
 ## Components and Interfaces
 
-### Evidence Capture Module
+### Dashcam Detection Pipeline
 
-**Purpose**: Processes video, voice, and location data from user submissions.
+**Purpose**: Processes uploaded dashcam videos of any length, segments them, and detects potholes with location data.
 
 **Key Functions**:
-- Video upload and preprocessing
-- GPS coordinate extraction
-- Metadata collection (timestamp, device info)
-- Input validation and format conversion
+- Video upload and validation
+- FFmpeg-based segmentation into 10-second clips
+- Frame extraction via OpenCV
+- Rekognition-based pothole detection
+- GPS coordinate extraction and association
+- Per-user event storage in DynamoDB
 
 **Interfaces**:
 ```typescript
-interface EvidenceInput {
-  videoFile?: File;
-  audioFile?: File;
+interface VideoUploadRequest {
+  videoFile: File;
+  userId: string;
+  uploadTimestamp: Date;
+}
+
+interface VideoSegment {
+  segmentId: string;
+  s3Path: string;
+  startTime: number;
+  duration: number;
   gpsCoordinates?: {
     latitude: number;
     longitude: number;
-    accuracy: number;
   };
-  timestamp: Date;
-  deviceInfo: DeviceMetadata;
 }
 
-interface ProcessedEvidence {
-  evidenceId: string;
-  s3VideoPath?: string;
-  s3AudioPath?: string;
+interface DetectionEvent {
+  eventId: string;
+  userId: string;
+  segmentId: string;
+  damageType: 'pothole' | 'crack' | 'surface_deterioration';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  confidence: number;
   location: LocationData;
-  metadata: EvidenceMetadata;
+  frameS3Path: string;
+  videoClipS3Path: string;
+  timestamp: Date;
 }
 ```
 
-### Bedrock Analysis Agent
+### Bedrock Analysis Engine
 
-**Purpose**: Multi-modal AI analysis using Amazon Bedrock LLMs for damage assessment and language processing.
+**Purpose**: Multi-modal AI analysis using Amazon Bedrock Nova Pro for damage assessment, severity classification, and portal routing.
 
 **Key Functions**:
-- Video analysis for damage detection and classification using Claude or other vision-capable LLMs
-- Voice transcription and content extraction in regional languages
-- Severity assessment and damage categorization
-- Location context analysis
+- Frame-by-frame damage analysis using Nova Pro vision capabilities
+- Severity assessment based on visual features
+- Portal routing using knowledge base (portals.json)
+- Location context analysis for jurisdiction determination
+- Report draft generation
 
 **Interfaces**:
 ```typescript
-interface AnalysisRequest {
-  evidenceId: string;
-  videoPath?: string;
-  audioPath?: string;
+interface BedrockAnalysisRequest {
+  frameS3Paths: string[];
   location: LocationData;
+  audioTranscript?: string;
 }
 
-interface AnalysisResult {
+interface BedrockAnalysisResult {
   damageType: 'pothole' | 'crack' | 'surface_deterioration' | 'multiple';
   severity: 'low' | 'medium' | 'high' | 'critical';
   description: string;
   confidence: number;
-  extractedText?: string;
-  detectedLanguage?: string;
   visualFeatures: DamageFeature[];
-}
-```
-
-### Portal Router
-
-**Purpose**: Determines the appropriate government portal based on location and damage type.
-
-**Key Functions**:
-- Jurisdiction mapping (municipal/state/central)
-- Portal selection based on damage type
-- Historical effectiveness tracking
-- Fallback portal identification
-
-**Interfaces**:
-```typescript
-interface PortalRoutingRequest {
-  location: LocationData;
-  damageType: string;
-  severity: string;
+  recommendedPortal: PortalInfo;
+  draftReport: string;
 }
 
-interface SelectedPortal {
-  portalId: string;
+interface PortalInfo {
   portalName: string;
   jurisdiction: 'municipal' | 'state' | 'central';
   baseUrl: string;
-  formPath: string;
-  expectedResponseTime: number;
-  confidence: number;
+  routingReason: string;
 }
 ```
 
-### Web Bridge Agent
+### Interactive Map Module
 
-**Purpose**: Automates form filling on government websites using Amazon Nova Act for browser automation.
+**Purpose**: Visualizes detected potholes on an interactive map with clustering by portal and sub-area.
 
 **Key Functions**:
-- Visual form field detection and interaction
-- Automated data entry using Nova Act's browser automation capabilities
-- Session management and error handling
-- CAPTCHA detection and user handoff
+- Leaflet/React-Leaflet map rendering
+- Geographic clustering of detection events
+- Cluster metadata aggregation (count, worst severity, representative clip)
+- One-click complaint filing workflow
+- Map pin removal and report persistence
 
 **Interfaces**:
 ```typescript
-interface FormFillingRequest {
-  portal: SelectedPortal;
-  reportData: ReportData;
-  evidenceUrls: string[];
+interface MapCluster {
+  clusterId: string;
+  portalName: string;
+  subArea: string;
+  centerCoordinates: {
+    latitude: number;
+    longitude: number;
+  };
+  eventCount: number;
+  worstSeverity: 'low' | 'medium' | 'high' | 'critical';
+  representativeVideoUrl: string;
+  bestFrameUrls: string[];
+  events: DetectionEvent[];
 }
 
-interface FormFillingResult {
-  status: 'completed' | 'requires_human' | 'failed';
-  filledFields: FieldMapping[];
-  pendingActions: PendingAction[];
-  sessionUrl?: string;
-  errorDetails?: string;
+interface ComplaintFilingRequest {
+  clusterId: string;
+  userId: string;
+  selectedEvents: string[];
+  additionalNotes?: string;
 }
+
+interface FiledComplaint {
+  complaintId: string;
+  clusterId: string;
+  userId: string;
+  portalName: string;
+  filedAt: Date;
+  status: 'filed' | 'acknowledged' | 'in_progress' | 'resolved';
+}
+```
+
+### Voice Transcription Service
+
+**Purpose**: Transcribes audio recordings in Indian regional languages using Amazon Transcribe.
+
+**Key Functions**:
+- Audio upload and format validation
+- Real-time transcription via Transcribe streaming API
+- Automatic language detection for Indic languages
+- Transcript integration into report drafts
+
+**Interfaces**:
+```typescript
+interface TranscriptionRequest {
+  audioFile: File;
+  userId: string;
+  preferredLanguage?: string;
+}
+
+interface TranscriptionResult {
+  transcriptId: string;
+  detectedLanguage: string;
+  transcript: string;
+  confidence: number;
+  audioS3Path: string;
+  duration: number;
+}
+
+interface SupportedLanguage {
+  code: string;
+  name: string;
+  transcribeCode: string;
+}
+
+// Supported: Hindi, Tamil, Telugu, Bengali, Marathi, Gujarati, Kannada, Malayalam, Punjabi, Odia
 ```
 
 ### Privacy Engine
 
-**Purpose**: Handles PII redaction and privacy compliance using Amazon Rekognition.
+**Purpose**: Handles PII redaction and privacy compliance using Amazon Rekognition and image processing.
 
 **Key Functions**:
-- Face detection and blurring
-- License plate redaction
-- Audio PII removal
-- Data encryption and secure storage
+- Face detection and blurring via Rekognition
+- License plate detection and redaction
+- Real-time coordinate-based blurring for live camera preview
+- Secure storage with encryption (S3 server-side encryption)
 
 **Interfaces**:
 ```typescript
-interface PrivacyProcessingRequest {
-  videoPath?: string;
-  audioPath?: string;
-  processingOptions: PrivacyOptions;
+interface PIIRedactionRequest {
+  imageS3Path?: string;
+  videoS3Path?: string;
+  liveFrameData?: ImageData;
 }
 
-interface PrivacyProcessingResult {
-  processedVideoPath?: string;
-  processedAudioPath?: string;
+interface PIIRedactionResult {
+  processedS3Path?: string;
   redactionLog: RedactionEvent[];
-  complianceStatus: 'compliant' | 'requires_review';
+  facesDetected: number;
+  platesDetected: number;
+  processingTime: number;
+}
+
+interface RedactionEvent {
+  type: 'face' | 'license_plate';
+  boundingBox: BoundingBox;
+  confidence: number;
+  timestamp: Date;
+}
+```
+
+### Location Intelligence
+
+**Purpose**: Handles GPS coordinates and address data using Amazon Location Service.
+
+**Key Functions**:
+- Reverse geocoding of GPS coordinates to structured addresses
+- Address verification and geocoding for manual entry
+- Jurisdiction determination (city, state, ward, constituency)
+- Integration with portal routing logic
+
+**Interfaces**:
+```typescript
+interface ReverseGeocodeRequest {
+  latitude: number;
+  longitude: number;
+}
+
+interface GeocodeRequest {
+  city: string;
+  state: string;
+  addressString: string;
+}
+
+interface LocationData {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
+  ward?: string;
+  constituency?: string;
+  formattedAddress: string;
+}
+```
+
+### Offline-First Storage
+
+**Purpose**: Enables evidence capture without internet connectivity using IndexedDB.
+
+**Key Functions**:
+- Local storage of video, audio, and photo evidence
+- Queue management for pending uploads
+- Automatic sync when connectivity is restored
+- Storage quota monitoring and user notifications
+
+**Interfaces**:
+```typescript
+interface OfflineQueueItem {
+  queueId: string;
+  userId: string;
+  type: 'video' | 'audio' | 'image';
+  localPath: string;
+  metadata: {
+    capturedAt: Date;
+    location?: LocationData;
+    fileSize: number;
+  };
+  syncStatus: 'pending' | 'syncing' | 'completed' | 'failed';
+  retryCount: number;
+}
+
+interface SyncResult {
+  queueId: string;
+  status: 'success' | 'failure';
+  s3Path?: string;
+  errorMessage?: string;
 }
 ```
 
@@ -229,39 +347,64 @@ interface PrivacyProcessingResult {
 ### Core Data Models
 
 ```typescript
-// User and Session Management
+// User and Authentication
 interface User {
   userId: string;
-  phoneNumber: string;
-  preferredLanguage: string;
-  location?: LocationData;
-  createdAt: Date;
+  email?: string;
+  phoneNumber?: string;
+  authProvider: 'cognito' | 'google';
+  displayName?: string;
+  profilePicture?: string;
+  contributorLevel: 1 | 2 | 3 | 4 | 5;
+  totalReports: number;
+  uniqueAreas: number;
+  memberSince: Date;
   lastActive: Date;
 }
 
-interface ReportSession {
-  sessionId: string;
+// Detection Events (Per-User)
+interface DetectionEvent {
+  eventId: string;
   userId: string;
-  status: 'capturing' | 'processing' | 'reviewing' | 'submitting' | 'completed' | 'failed';
-  evidenceId?: string;
-  analysisResult?: AnalysisResult;
-  selectedPortal?: SelectedPortal;
-  formFillingResult?: FormFillingResult;
-  createdAt: Date;
-  updatedAt: Date;
+  segmentId: string;
+  damageType: 'pothole' | 'crack' | 'surface_deterioration';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  confidence: number;
+  location: LocationData;
+  frameS3Path: string;
+  videoClipS3Path: string;
+  detectedAt: Date;
+  isFiled: boolean;
+}
+
+// Map Clusters
+interface MapCluster {
+  clusterId: string;
+  portalName: string;
+  subArea: string;
+  centerCoordinates: {
+    latitude: number;
+    longitude: number;
+  };
+  eventCount: number;
+  worstSeverity: 'low' | 'medium' | 'high' | 'critical';
+  representativeVideoUrl: string;
+  bestFrameUrls: string[];
+  eventIds: string[];
 }
 
 // Location and Geographic Data
 interface LocationData {
   latitude: number;
   longitude: number;
-  accuracy: number;
-  address?: string;
+  accuracy?: number;
+  address: string;
   city: string;
   state: string;
   pincode: string;
   ward?: string;
   constituency?: string;
+  formattedAddress: string;
 }
 
 // Damage Analysis
@@ -286,40 +429,49 @@ interface GovernmentPortal {
   name: string;
   jurisdiction: 'municipal' | 'state' | 'central';
   baseUrl: string;
-  formSelectors: FormSelector[];
-  supportedDamageTypes: string[];
   geographicCoverage: GeographicArea[];
-  apiEndpoint?: string;
-  lastUpdated: Date;
+  supportedDamageTypes: string[];
+  contactInfo?: string;
   isActive: boolean;
 }
 
-interface FormSelector {
-  fieldName: string;
-  selector: string;
-  inputType: 'text' | 'select' | 'file' | 'textarea';
-  required: boolean;
-  validationRules?: ValidationRule[];
+interface GeographicArea {
+  state: string;
+  cities?: string[];
+  districts?: string[];
 }
 
 // Report Data Structure
-interface ReportData {
+interface Report {
   reportId: string;
+  userId: string;
+  clusterId?: string;
   damageType: string;
   severity: string;
   description: string;
   location: LocationData;
-  reporterInfo: ReporterInfo;
+  portalName: string;
   evidenceUrls: string[];
-  submissionTimestamp: Date;
+  audioTranscript?: string;
+  filedAt: Date;
+  status: 'filed' | 'acknowledged' | 'in_progress' | 'resolved';
   governmentReferenceId?: string;
 }
 
-interface ReporterInfo {
-  name?: string;
-  phoneNumber: string;
-  email?: string;
-  isAnonymous: boolean;
+// Offline Queue
+interface OfflineQueueItem {
+  queueId: string;
+  userId: string;
+  type: 'video' | 'audio' | 'image';
+  localPath: string;
+  metadata: {
+    capturedAt: Date;
+    location?: LocationData;
+    fileSize: number;
+  };
+  syncStatus: 'pending' | 'syncing' | 'completed' | 'failed';
+  retryCount: number;
+  lastAttempt?: Date;
 }
 ```
 
@@ -331,133 +483,75 @@ interface UsersTable {
   PK: string; // USER#{userId}
   SK: string; // PROFILE
   userId: string;
-  phoneNumber: string;
-  preferredLanguage: string;
-  location?: LocationData;
-  createdAt: string;
+  email?: string;
+  phoneNumber?: string;
+  authProvider: 'cognito' | 'google';
+  displayName?: string;
+  profilePicture?: string;
+  contributorLevel: number;
+  totalReports: number;
+  uniqueAreas: number;
+  memberSince: string;
   lastActive: string;
-  GSI1PK?: string; // PHONE#{phoneNumber}
+  GSI1PK?: string; // EMAIL#{email} or PHONE#{phoneNumber}
 }
 
-interface ReportSessionsTable {
-  PK: string; // SESSION#{sessionId}
-  SK: string; // METADATA
-  sessionId: string;
+interface DetectionEventsTable {
+  PK: string; // USER#{userId}
+  SK: string; // EVENT#{eventId}
+  eventId: string;
   userId: string;
-  status: string;
-  evidenceId?: string;
-  analysisResult?: AnalysisResult;
-  selectedPortal?: SelectedPortal;
-  formFillingResult?: FormFillingResult;
-  createdAt: string;
-  updatedAt: string;
-  GSI1PK?: string; // USER#{userId}
-  GSI1SK?: string; // SESSION#{createdAt}
-}
-
-interface GovernmentPortalsTable {
-  PK: string; // PORTAL#{portalId}
-  SK: string; // CONFIG
-  portalId: string;
-  name: string;
-  jurisdiction: string;
-  baseUrl: string;
-  formSelectors: FormSelector[];
-  supportedDamageTypes: string[];
-  geographicCoverage: GeographicArea[];
-  lastUpdated: string;
-  isActive: boolean;
-  GSI1PK?: string; // JURISDICTION#{jurisdiction}
+  segmentId: string;
+  damageType: string;
+  severity: string;
+  confidence: number;
+  location: LocationData;
+  frameS3Path: string;
+  videoClipS3Path: string;
+  detectedAt: string;
+  isFiled: boolean;
+  GSI1PK?: string; // LOCATION#{state}#{city}
+  GSI1SK?: string; // SEVERITY#{severity}#{detectedAt}
 }
 
 interface ReportsTable {
   PK: string; // REPORT#{reportId}
   SK: string; // METADATA
   reportId: string;
-  sessionId: string;
   userId: string;
+  clusterId?: string;
   damageType: string;
   severity: string;
+  description: string;
   location: LocationData;
-  status: 'submitted' | 'acknowledged' | 'in_progress' | 'resolved';
+  portalName: string;
+  evidenceUrls: string[];
+  audioTranscript?: string;
+  filedAt: string;
+  status: 'filed' | 'acknowledged' | 'in_progress' | 'resolved';
   governmentReferenceId?: string;
-  submissionTimestamp: string;
-  GSI1PK?: string; // LOCATION#{state}#{city}
-  GSI1SK?: string; // DAMAGE#{damageType}#{submissionTimestamp}
+  GSI1PK?: string; // USER#{userId}
+  GSI1SK?: string; // FILED#{filedAt}
+  GSI2PK?: string; // PORTAL#{portalName}
+  GSI2SK?: string; // STATUS#{status}#{filedAt}
+}
+
+interface PortalsConfigTable {
+  PK: string; // PORTAL#{portalId}
+  SK: string; // CONFIG
+  portalId: string;
+  name: string;
+  jurisdiction: string;
+  baseUrl: string;
+  geographicCoverage: GeographicArea[];
+  supportedDamageTypes: string[];
+  contactInfo?: string;
+  isActive: boolean;
+  lastUpdated: string;
+  GSI1PK?: string; // JURISDICTION#{jurisdiction}
+  GSI1SK?: string; // STATE#{state}
 }
 ```
-
-Now I need to use the prework tool to analyze the acceptance criteria before writing the Correctness Properties section.
-
-<function_calls>
-<invoke name="prework">
-<parameter name="featureName">roadfix-ai
-
-## Correctness Properties
-
-*A property is a characteristic or behavior that should hold true across all valid executions of a system—essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
-
-Based on the prework analysis of acceptance criteria, the following properties ensure the correctness of Sewa Sahayak across all valid inputs and scenarios:
-
-### Property 1: Multi-modal Evidence Processing
-*For any* combination of video and voice input with location data, the Evidence Capture Module and Bedrock Analysis Agent should successfully extract GPS coordinates, timestamp, damage assessment, and relevant details from voice content, producing a complete evidence record.
-**Validates: Requirements 1.1, 1.2, 1.3**
-
-### Property 2: Jurisdiction Mapping Accuracy
-*For any* valid location data provided to the Portal Router, the system should correctly identify the appropriate government jurisdiction (municipal, state, or central) and select a portal that serves that geographic area.
-**Validates: Requirements 2.1, 2.2**
-
-### Property 3: Portal Selection with Prioritization
-*For any* damage type and location where multiple government portals are applicable, the Portal Router should select the portal with the best historical response time and effectiveness metrics, and provide complete portal information including expected response timeline.
-**Validates: Requirements 2.3, 2.4**
-
-### Property 4: Form Field Detection and Population
-*For any* government portal accessed by the Web Bridge Agent, the system should visually identify form fields, populate them with appropriate data from the evidence analysis, and handle various form elements (text fields, dropdowns, file uploads) correctly.
-**Validates: Requirements 3.1, 3.2, 3.3**
-
-### Property 5: Form Submission Error Recovery
-*For any* form validation error or session timeout encountered during form filling, the Web Bridge Agent should detect the issue, correct the entries where possible, and retry submission while maintaining session state.
-**Validates: Requirements 3.4, 3.5**
-
-### Property 6: PII Detection and Redaction
-*For any* video or audio content processed by the Privacy Engine, the system should automatically detect and redact human faces, license plates, and personal information in audio, while preserving the essential damage-related content.
-**Validates: Requirements 4.1, 4.2, 4.3**
-
-### Property 7: Data Encryption and Privacy Compliance
-*For any* processed media or user data stored by the system, the Privacy Engine should apply industry-standard encryption (AES-256 for rest, TLS 1.3 for transit) and flag uncertain PII detection cases for human review.
-**Validates: Requirements 4.4, 4.5**
-
-### Property 8: Human-in-the-Loop Handoff
-*For any* form filling session that reaches 90% completion or encounters CAPTCHA/human verification, the Human Loop Interface should present the form for user review, highlight auto-filled fields, and enable user modifications before final submission.
-**Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5**
-
-### Property 9: Multi-language Processing
-*For any* voice input in supported Indian regional languages (Hindi, Tamil, Telugu, Bengali, Marathi, Gujarati, Kannada, Malayalam, Punjabi, Odia), the Bedrock Analysis Agent should automatically detect the language, transcribe the content accurately including dialects and accents, and maintain semantic accuracy in translations.
-**Validates: Requirements 6.1, 6.2, 6.3, 6.5**
-
-### Property 10: Offline Storage and Synchronization
-*For any* evidence capture session when internet connectivity is unavailable, the Evidence Capture Module should store video and voice data locally, then automatically sync to cloud processing when connectivity is restored, with proper storage management and user status indication.
-**Validates: Requirements 7.1, 7.2, 7.4, 7.5**
-
-### Property 11: Performance Requirements Compliance
-*For any* processing operation (video analysis under 100MB, voice transcription under 2 minutes, form filling), the system should complete within specified time limits (30s, 15s, 60s respectively) and provide progress updates every 10 seconds for longer operations.
-**Validates: Requirements 8.1, 8.2, 8.3, 8.4**
-
-### Property 12: Cross-Platform Compatibility
-*For any* supported video format and resolution (up to 4K), the system should process the content correctly across different mobile browsers and screen sizes (4-7 inches), with responsive design and appropriate compression options for limited storage.
-**Validates: Requirements 9.3, 9.4, 9.5**
-
-### Property 13: Data Security and User Control
-*For any* user data collection, storage, or sharing operation, the system should obtain explicit consent, use proper encryption, enable data deletion within 30 days upon request, and log all data transfers with user notification.
-**Validates: Requirements 10.3, 10.4, 10.5**
-
-### Property 14: Damage Classification Consistency
-*For any* road damage analysis, the Bedrock Analysis Agent should identify damage types using consistent criteria, categorize severity levels uniformly, detect multiple damage types when present, and flag uncertain assessments for human review while handling various environmental conditions.
-**Validates: Requirements 11.1, 11.2, 11.3, 11.4, 11.5**
-
-### Property 15: System Monitoring and Analytics
-*For any* user interaction, system error, or report submission, the system should generate appropriate logs with sufficient detail for debugging, track submission outcomes, generate capacity alerts based on usage patterns, and provide privacy-compliant aggregated analytics.
-**Validates: Requirements 12.1, 12.2, 12.3, 12.4, 12.5**
 
 ## Error Handling
 
@@ -470,27 +564,27 @@ Based on the prework analysis of acceptance criteria, the following properties e
 - Strategy: Graceful degradation with user feedback and alternative input options
 
 **2. AI Processing Errors**
-- Bedrock Analysis Agent failures or timeouts
+- Bedrock/Rekognition analysis failures or timeouts
 - Low confidence in damage classification
-- Language detection failures
-- Strategy: Retry with exponential backoff, fallback to human review, error logging
+- Language detection failures in Transcribe
+- Strategy: Retry with exponential backoff, fallback to manual review, error logging
 
-**3. Web Automation Errors**
-- Government portal unavailability or changes
-- Form field detection failures
-- Session timeouts or CAPTCHA challenges
-- Strategy: Portal fallback selection, human-in-the-loop handoff, session recovery
+**3. Offline Sync Errors**
+- IndexedDB storage quota exceeded
+- Network connectivity loss during upload
+- S3 upload failures
+- Strategy: Queue management, retry with backoff, user notification of sync status
 
 **4. Privacy and Security Errors**
 - PII detection failures
-- Encryption key issues
-- Data compliance violations
-- Strategy: Fail-safe to human review, secure error logging, compliance alerts
+- Encryption issues
+- OAuth authentication failures
+- Strategy: Fail-safe to manual review, secure error logging, re-authentication prompts
 
 **5. Infrastructure Errors**
 - AWS service outages
-- Network connectivity issues
-- Storage capacity limits
+- DynamoDB throttling
+- S3 storage limits
 - Strategy: Circuit breaker patterns, offline mode, graceful degradation
 
 ### Error Recovery Mechanisms
@@ -500,7 +594,7 @@ interface ErrorRecoveryStrategy {
   errorType: string;
   maxRetries: number;
   backoffStrategy: 'exponential' | 'linear' | 'immediate';
-  fallbackAction: 'human_review' | 'alternative_portal' | 'offline_mode' | 'user_notification';
+  fallbackAction: 'manual_review' | 'offline_mode' | 'user_notification' | 'skip';
   escalationThreshold: number;
 }
 
@@ -510,14 +604,14 @@ const errorStrategies: ErrorRecoveryStrategy[] = [
     errorType: 'bedrock_analysis_timeout',
     maxRetries: 3,
     backoffStrategy: 'exponential',
-    fallbackAction: 'human_review',
+    fallbackAction: 'manual_review',
     escalationThreshold: 5
   },
   {
-    errorType: 'portal_form_detection_failure',
+    errorType: 'rekognition_detection_failure',
     maxRetries: 2,
-    backoffStrategy: 'immediate',
-    fallbackAction: 'alternative_portal',
+    backoffStrategy: 'exponential',
+    fallbackAction: 'skip',
     escalationThreshold: 3
   },
   {
@@ -526,81 +620,130 @@ const errorStrategies: ErrorRecoveryStrategy[] = [
     backoffStrategy: 'immediate',
     fallbackAction: 'offline_mode',
     escalationThreshold: 1
+  },
+  {
+    errorType: 's3_upload_failure',
+    maxRetries: 5,
+    backoffStrategy: 'exponential',
+    fallbackAction: 'user_notification',
+    escalationThreshold: 10
   }
 ];
 ```
 
 ## Testing Strategy
 
-### Dual Testing Approach
+### Testing Approach
 
-The testing strategy employs both unit testing and property-based testing to ensure comprehensive coverage:
+The testing strategy focuses on validating the core workflows and AWS service integrations:
 
-**Unit Tests**: Focus on specific examples, edge cases, and integration points between components. These tests validate concrete scenarios and catch specific bugs in implementation details.
+**Unit Tests**: Focus on specific components, edge cases, and business logic. These tests validate concrete scenarios and catch implementation bugs.
 
-**Property Tests**: Verify universal properties across all inputs using randomized test data. These tests ensure the system behaves correctly across the full input space and catch edge cases that might be missed by example-based tests.
+**Integration Tests**: Verify end-to-end workflows across multiple components and AWS services. These tests ensure the system behaves correctly in realistic scenarios.
 
-Together, unit tests and property tests provide complementary coverage—unit tests catch concrete implementation bugs while property tests verify general correctness guarantees.
+**Manual Testing**: User acceptance testing for UI/UX flows, offline mode, and cross-browser compatibility.
 
-### Property-Based Testing Configuration
+### Testing Focus Areas
 
-**Testing Framework**: Use **fast-check** for TypeScript/JavaScript property-based testing, integrated with Jest for the overall testing framework.
+**1. Dashcam Detection Pipeline**
+- Video upload and FFmpeg segmentation
+- Frame extraction with OpenCV
+- Rekognition pothole detection accuracy
+- GPS coordinate extraction and association
+- Per-user event isolation in DynamoDB
 
-**Test Configuration**:
-- Minimum 100 iterations per property test (due to randomization)
-- Each property test references its corresponding design document property
-- Tag format: **Feature: sewa-sahayak, Property {number}: {property_text}**
+**2. Bedrock Analysis**
+- Multi-modal damage assessment (frames + location)
+- Severity classification consistency
+- Portal routing logic with portals.json
+- Report draft generation quality
+- Confidence scoring and thresholds
 
-**Property Test Implementation Requirements**:
-- Each correctness property must be implemented by a single property-based test
-- Tests should generate realistic input data (valid video files, location coordinates, damage types)
-- Use appropriate generators for Indian geographic data, regional languages, and government portal structures
-- Include edge case generators for poor quality media, network failures, and unusual input combinations
+**3. Interactive Map**
+- Cluster generation by portal and sub-area
+- Metadata aggregation (count, severity, clips)
+- One-click filing workflow
+- Map pin removal after filing
+- Report persistence in DynamoDB
 
-### Unit Testing Focus Areas
+**4. Voice Transcription**
+- Audio upload and format validation
+- Transcribe API integration for Indic languages
+- Language detection accuracy
+- Transcript integration into drafts
 
-**Specific Examples and Edge Cases**:
-- GPS unavailable scenarios (Requirement 1.4)
-- CAPTCHA encounters during form filling (Requirement 5.3)
-- Platform compatibility on specific Android/iOS versions (Requirements 9.1, 9.2)
-- Explicit consent collection flows (Requirement 10.2)
+**5. PII Redaction**
+- Face detection and blurring via Rekognition
+- License plate detection and redaction
+- Real-time coordinate-based blurring
+- S3 storage with encryption
+
+**6. Location Intelligence**
+- Reverse geocoding via Amazon Location Service
+- Address verification and geocoding
+- Jurisdiction determination
+- Portal routing integration
+
+**7. Offline Mode**
+- IndexedDB storage and queue management
+- Automatic sync on connectivity restore
+- Storage quota monitoring
+- Online/offline indicator accuracy
+
+**8. Authentication**
+- AWS Cognito OAuth flow
+- Google OAuth 2.0 flow
+- Session management
+- User profile creation and updates
+
+### Unit Testing Examples
+
+**Specific Edge Cases**:
+- GPS unavailable scenarios
+- Video files exceeding size limits
+- Corrupted or unsupported video formats
+- Network failures during upload
+- DynamoDB throttling scenarios
+- S3 upload failures and retries
 
 **Integration Testing**:
-- End-to-end report submission workflows
-- Cross-component data flow validation
-- AWS service integration points
-- Government portal interaction scenarios
+- End-to-end dashcam upload to detection workflow
+- Voice recording to transcript to draft workflow
+- Map cluster generation to complaint filing
+- Offline capture to online sync workflow
+- OAuth login to profile dashboard
 
 **Error Condition Testing**:
 - Network failure scenarios
 - Invalid input handling
 - Service timeout behaviors
 - Data corruption recovery
+- Concurrent user operations
 
 ### Test Data Management
 
 **Synthetic Data Generation**:
 - Generate realistic Indian addresses and coordinates
-- Create sample road damage videos with known characteristics
+- Create sample dashcam videos with known potholes
 - Produce multi-language voice samples for testing
-- Mock government portal responses and form structures
+- Mock Rekognition and Bedrock responses
 
 **Privacy-Compliant Testing**:
 - Use synthetic PII data for privacy testing
 - Ensure no real user data in test environments
 - Validate PII redaction with known test cases
-- Test encryption/decryption with controlled keys
+- Test encryption with controlled keys
 
 ### Continuous Testing Strategy
 
 **Automated Testing Pipeline**:
-- Property tests run on every commit with full 100-iteration cycles
-- Unit tests provide fast feedback in development
-- Integration tests run on staging environment deployments
+- Unit tests run on every commit
+- Integration tests run on PR creation
+- Deployment tests run on staging environment
 - Performance tests validate timing requirements
 
 **Monitoring and Alerting**:
-- Property test failures trigger immediate alerts
-- Performance regression detection for timing requirements
-- Government portal availability monitoring
-- AI model accuracy tracking over time
+- Test failures trigger immediate alerts
+- Performance regression detection
+- AWS service availability monitoring
+- Error rate tracking and alerting
