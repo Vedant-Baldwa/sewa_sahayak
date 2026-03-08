@@ -67,14 +67,19 @@ jobs:
         ssh -i ~/.ssh/deploy_key $USER@$CLEAN_HOST << 'EOF'
           cd /var/www/sewa_sahayak/backend
           
-          # Install dependencies securely in venv
-          python3 -m venv venv
+          # Install dependencies - only create venv if missing, never cache pip downloads
+          [ -d venv ] || python3 -m venv venv
           source venv/bin/activate
-          pip install -r requirements.txt --quiet
-          pip install authlib itsdangerous starlette --quiet
+          pip install --no-cache-dir -r requirements.txt --quiet
+          pip install --no-cache-dir authlib itsdangerous starlette --quiet
           
-          # Restart Python API (PM2)
-          pm2 restart sewa_backend || pm2 start "venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000" --name "sewa_backend"
+          # Write a bash start script so PM2 doesn't treat uvicorn as a Node.js file
+          printf '#!/bin/bash\ncd /var/www/sewa_sahayak/backend\nsource venv/bin/activate\nexec uvicorn main:app --host 127.0.0.1 --port 8000\n' > /tmp/start_backend.sh
+          chmod +x /tmp/start_backend.sh
+
+          # Restart Python API (PM2) - always delete+start to avoid stale cached configs
+          pm2 delete sewa_backend 2>/dev/null || true
+          pm2 start /tmp/start_backend.sh --name sewa_backend
           pm2 save
           
           # Restart Nginx
