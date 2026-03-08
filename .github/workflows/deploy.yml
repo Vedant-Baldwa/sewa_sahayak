@@ -73,8 +73,9 @@ jobs:
           pip install -r requirements.txt --quiet
           pip install authlib itsdangerous starlette --quiet
           
-          # Restart Python API (PM2)
-          pm2 restart sewa_backend || pm2 start "venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000" --name "sewa_backend"
+          # Restart Python API (PM2) - always delete+start to avoid stale cached configs
+          pm2 delete sewa_backend 2>/dev/null || true
+          pm2 start venv/bin/uvicorn --name sewa_backend --cwd /var/www/sewa_sahayak/backend -- main:app --host 127.0.0.1 --port 8000
           pm2 save
           
           # Restart Nginx
