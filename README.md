@@ -188,7 +188,6 @@ graph TB
     API <--> CORE <--> SVC
     SVC <--> BEDROCK & REKOGNITION & TRANSCRIBE
     SVC <--> S3 & DYNAMO & AUTH
-    CORE <--> NOVA <--> BROWSER
 ```
 
 ---
