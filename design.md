@@ -2,9 +2,9 @@
 
 ## Overview
 
-Sewa Sahayak is a civic-tech solution that leverages Amazon Bedrock's multi-modal AI capabilities to streamline road damage reporting to Indian government portals. The system addresses the "Reporting Wall" problem by processing citizen-submitted evidence (dashcam video, voice, photos) and generating structured, data-rich report drafts that users can review and submit.
+Sewa Sahayak is a civic-tech solution that leverages Amazon Bedrock's multi-modal AI capabilities and Amazon SageMaker to streamline road damage reporting to Indian government portals. The system addresses the "Reporting Wall" problem by processing citizen-submitted evidence (dashcam video, photos) and generating structured, data-rich report drafts that users can review and submit.
 
-The system combines Amazon Bedrock (Nova Pro) for multi-modal analysis, Amazon Rekognition for visual detection and PII redaction, and Amazon Transcribe for voice processing. By reducing reporting time from 15+ minutes to under 3 minutes and providing an interactive map-based interface, the system aims to increase civic participation in infrastructure maintenance.
+The system combines a custom Road Damage Detection model hosted on Amazon SageMaker for identifying potholes, Amazon Bedrock (Nova Pro) for multi-modal analysis, and Amazon Rekognition for visual frame extraction and PII redaction. By reducing reporting time from 15+ minutes to under 3 minutes and providing an interactive map-based interface, the system aims to increase civic participation in infrastructure maintenance.
 
 ## Architecture
 
@@ -25,9 +25,9 @@ graph TB
     end
     
     subgraph "AI/ML Services"
+        SAGEMAKER[Amazon SageMaker]
         BEDROCK[Amazon Bedrock · Nova Pro]
         REKOGNITION[Amazon Rekognition]
-        TRANSCRIBE[Amazon Transcribe]
         LOCATION[Amazon Location Service]
     end
     
@@ -50,9 +50,9 @@ graph TB
     AUTH --> COGNITO
     API --> VIDEO
     VIDEO --> FRAME
-    FRAME --> REKOGNITION
+    FRAME --> SAGEMAKER
+    SAGEMAKER --> REKOGNITION
     REKOGNITION --> BEDROCK
-    API --> TRANSCRIBE
     API --> LOCATION
     API --> PII
     BEDROCK --> DYNAMO
@@ -64,25 +64,25 @@ graph TB
 
 The system follows a layered architecture with the following key components:
 
-1. **Dashcam Detection Pipeline**: Processes video uploads with FFmpeg segmentation and Rekognition analysis
+1. **Dashcam Detection Pipeline**: Processes video uploads with FFmpeg segmentation, SageMaker inference, and Rekognition analysis
 2. **Bedrock Analysis Engine**: Multi-modal AI analysis for damage assessment and portal routing
 3. **Interactive Map Module**: Leaflet-based clustering and visualization of detected potholes
-4. **Voice Transcription Service**: Regional language support via Amazon Transcribe
-5. **Privacy Engine**: PII redaction using Rekognition and image processing
-6. **Location Intelligence**: GPS and address handling via Amazon Location Service
-7. **Offline-First Storage**: IndexedDB-based queue for evidence capture without connectivity
+4. **Privacy Engine**: PII redaction using Rekognition and image processing
+5. **Location Intelligence**: GPS and address handling via Amazon Location Service
+6. **Offline-First Storage**: IndexedDB-based queue for evidence capture without connectivity
 
 ## Components and Interfaces
 
 ### Dashcam Detection Pipeline
 
-**Purpose**: Processes uploaded dashcam videos of any length, segments them, and detects potholes with location data.
+**Purpose**: Processes uploaded dashcam videos of any length, segments them, and detects potholes with location data using SageMaker models.
 
 **Key Functions**:
 - Video upload and validation
 - FFmpeg-based segmentation into 10-second clips
 - Frame extraction via OpenCV
-- Rekognition-based pothole detection
+- SageMaker custom model inference for pothole detection
+- Rekognition-based secondary validation
 - GPS coordinate extraction and association
 - Per-user event storage in DynamoDB
 
@@ -135,7 +135,6 @@ interface DetectionEvent {
 interface BedrockAnalysisRequest {
   frameS3Paths: string[];
   location: LocationData;
-  audioTranscript?: string;
 }
 
 interface BedrockAnalysisResult {
@@ -199,42 +198,6 @@ interface FiledComplaint {
   filedAt: Date;
   status: 'filed' | 'acknowledged' | 'in_progress' | 'resolved';
 }
-```
-
-### Voice Transcription Service
-
-**Purpose**: Transcribes audio recordings in Indian regional languages using Amazon Transcribe.
-
-**Key Functions**:
-- Audio upload and format validation
-- Real-time transcription via Transcribe streaming API
-- Automatic language detection for Indic languages
-- Transcript integration into report drafts
-
-**Interfaces**:
-```typescript
-interface TranscriptionRequest {
-  audioFile: File;
-  userId: string;
-  preferredLanguage?: string;
-}
-
-interface TranscriptionResult {
-  transcriptId: string;
-  detectedLanguage: string;
-  transcript: string;
-  confidence: number;
-  audioS3Path: string;
-  duration: number;
-}
-
-interface SupportedLanguage {
-  code: string;
-  name: string;
-  transcribeCode: string;
-}
-
-// Supported: Hindi, Tamil, Telugu, Bengali, Marathi, Gujarati, Kannada, Malayalam, Punjabi, Odia
 ```
 
 ### Privacy Engine
@@ -313,7 +276,7 @@ interface LocationData {
 **Purpose**: Enables evidence capture without internet connectivity using IndexedDB.
 
 **Key Functions**:
-- Local storage of video, audio, and photo evidence
+- Local storage of video and photo evidence
 - Queue management for pending uploads
 - Automatic sync when connectivity is restored
 - Storage quota monitoring and user notifications
@@ -323,7 +286,7 @@ interface LocationData {
 interface OfflineQueueItem {
   queueId: string;
   userId: string;
-  type: 'video' | 'audio' | 'image';
+  type: 'video' | 'image';
   localPath: string;
   metadata: {
     capturedAt: Date;
@@ -452,7 +415,6 @@ interface Report {
   location: LocationData;
   portalName: string;
   evidenceUrls: string[];
-  audioTranscript?: string;
   filedAt: Date;
   status: 'filed' | 'acknowledged' | 'in_progress' | 'resolved';
   governmentReferenceId?: string;
@@ -462,7 +424,7 @@ interface Report {
 interface OfflineQueueItem {
   queueId: string;
   userId: string;
-  type: 'video' | 'audio' | 'image';
+  type: 'video' | 'image';
   localPath: string;
   metadata: {
     capturedAt: Date;
@@ -526,7 +488,6 @@ interface ReportsTable {
   location: LocationData;
   portalName: string;
   evidenceUrls: string[];
-  audioTranscript?: string;
   filedAt: string;
   status: 'filed' | 'acknowledged' | 'in_progress' | 'resolved';
   governmentReferenceId?: string;
@@ -560,13 +521,12 @@ interface PortalsConfigTable {
 **1. Input Validation Errors**
 - Invalid video formats or corrupted files
 - Missing GPS data or invalid coordinates
-- Audio quality too poor for transcription
 - Strategy: Graceful degradation with user feedback and alternative input options
 
 **2. AI Processing Errors**
+- SageMaker inference failures
 - Bedrock/Rekognition analysis failures or timeouts
 - Low confidence in damage classification
-- Language detection failures in Transcribe
 - Strategy: Retry with exponential backoff, fallback to manual review, error logging
 
 **3. Offline Sync Errors**
@@ -600,6 +560,13 @@ interface ErrorRecoveryStrategy {
 
 // Example error recovery configurations
 const errorStrategies: ErrorRecoveryStrategy[] = [
+  {
+    errorType: 'sagemaker_inference_timeout',
+    maxRetries: 2,
+    backoffStrategy: 'exponential',
+    fallbackAction: 'manual_review',
+    escalationThreshold: 3
+  },
   {
     errorType: 'bedrock_analysis_timeout',
     maxRetries: 3,
@@ -648,6 +615,7 @@ The testing strategy focuses on validating the core workflows and AWS service in
 **1. Dashcam Detection Pipeline**
 - Video upload and FFmpeg segmentation
 - Frame extraction with OpenCV
+- SageMaker custom model inference latency and accuracy
 - Rekognition pothole detection accuracy
 - GPS coordinate extraction and association
 - Per-user event isolation in DynamoDB
@@ -666,31 +634,25 @@ The testing strategy focuses on validating the core workflows and AWS service in
 - Map pin removal after filing
 - Report persistence in DynamoDB
 
-**4. Voice Transcription**
-- Audio upload and format validation
-- Transcribe API integration for Indic languages
-- Language detection accuracy
-- Transcript integration into drafts
-
-**5. PII Redaction**
+**4. PII Redaction**
 - Face detection and blurring via Rekognition
 - License plate detection and redaction
 - Real-time coordinate-based blurring
 - S3 storage with encryption
 
-**6. Location Intelligence**
+**5. Location Intelligence**
 - Reverse geocoding via Amazon Location Service
 - Address verification and geocoding
 - Jurisdiction determination
 - Portal routing integration
 
-**7. Offline Mode**
+**6. Offline Mode**
 - IndexedDB storage and queue management
 - Automatic sync on connectivity restore
 - Storage quota monitoring
 - Online/offline indicator accuracy
 
-**8. Authentication**
+**7. Authentication**
 - AWS Cognito OAuth flow
 - Google OAuth 2.0 flow
 - Session management
@@ -708,7 +670,6 @@ The testing strategy focuses on validating the core workflows and AWS service in
 
 **Integration Testing**:
 - End-to-end dashcam upload to detection workflow
-- Voice recording to transcript to draft workflow
 - Map cluster generation to complaint filing
 - Offline capture to online sync workflow
 - OAuth login to profile dashboard
@@ -725,8 +686,7 @@ The testing strategy focuses on validating the core workflows and AWS service in
 **Synthetic Data Generation**:
 - Generate realistic Indian addresses and coordinates
 - Create sample dashcam videos with known potholes
-- Produce multi-language voice samples for testing
-- Mock Rekognition and Bedrock responses
+- Mock SageMaker, Rekognition, and Bedrock responses
 
 **Privacy-Compliant Testing**:
 - Use synthetic PII data for privacy testing
@@ -745,5 +705,5 @@ The testing strategy focuses on validating the core workflows and AWS service in
 **Monitoring and Alerting**:
 - Test failures trigger immediate alerts
 - Performance regression detection
-- AWS service availability monitoring
+- AWS service availability and SageMaker endpoint metrics
 - Error rate tracking and alerting
