@@ -38,12 +38,12 @@ export default function MyReports() {
     }, []);
 
     return (
-        <div className="glass-panel" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
-                <h2 className="heading-2">My Reports</h2>
+        <div className="card-3d" style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem', background: 'rgba(17,24,39,0.5)', borderBottom: '1px solid rgba(129,140,248,0.1)' }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: '600', margin: 0 }}>My Reports</h2>
                 <button
-                    className="btn btn-secondary"
-                    style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    className="btn-premium btn-outline"
+                    style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '8px' }}
                     onClick={fetchReports}
                     disabled={loading}
                     title="Refresh reports"
@@ -61,37 +61,44 @@ export default function MyReports() {
                 ) : error ? (
                     <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--color-danger, #ef4444)' }}>
                         <p>{error}</p>
-                        <button className="btn btn-primary" style={{ marginTop: '1rem', fontSize: '0.85rem' }} onClick={fetchReports}>
+                        <button className="btn-premium" style={{ marginTop: '1rem', fontSize: '0.85rem' }} onClick={fetchReports}>
                             Try Again
                         </button>
                     </div>
                 ) : reports.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--color-text-muted)' }}>
-                        <Archive size={48} style={{ opacity: 0.2, margin: '0 auto 1rem' }} />
-                        <p>You haven't submitted any reports yet.</p>
-                        <p style={{ fontSize: '0.8rem', marginTop: '0.5rem' }}>Reports you submit will appear here across all your devices.</p>
+                    <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--color-text-muted)', background: 'rgba(17,24,39,0.4)', borderRadius: '16px', border: '1px dashed rgba(129,140,248,0.2)' }}>
+                        <Archive size={48} style={{ opacity: 0.3, margin: '0 auto 1rem', color: 'var(--color-primary)' }} />
+                        <p style={{ color: 'var(--color-text-main)', fontWeight: '500' }}>You haven't submitted any reports yet.</p>
+                        <p style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>Reports you submit will appear here across all your devices.</p>
                     </div>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                         {reports.map((report) => (
-                            <div key={report.ticketId} style={{ background: 'rgba(255,255,255,0.8)', padding: '1.25rem', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)', boxShadow: 'var(--shadow-sm)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                                    <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--color-primary)', background: 'var(--color-bg)', padding: '2px 8px', borderRadius: '4px' }}>
+                            <div key={report.ticketId} className="report-card" style={{
+                                background: 'var(--color-surface)',
+                                padding: '1.25rem',
+                                borderRadius: '12px',
+                                border: 'var(--glass-border)',
+                                transition: 'var(--transition-normal)'
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                                    <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--color-primary)', background: 'rgba(129,140,248,0.1)', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(129,140,248,0.2)', letterSpacing: '0.5px' }}>
                                         {report.ticketId}
                                     </span>
-                                    <span style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--color-success)', fontWeight: '600' }}>
+                                    <span style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--color-success)', background: 'rgba(52,211,153,0.1)', padding: '4px 8px', borderRadius: '6px', fontWeight: '600' }}>
                                         <Clock size={12} /> {report.status}
                                     </span>
                                 </div>
 
-                                <h4 style={{ fontWeight: '600', fontSize: '1rem', marginBottom: '0.25rem' }}>{report.jurisdiction?.portal_name || report.damageType || 'Government Portal'}</h4>
+                                <h4 style={{ fontWeight: '600', fontSize: '1.05rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>{report.jurisdiction?.portal_name || report.damageType || 'Government Portal'}</h4>
 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--color-text-muted)', fontSize: '0.8rem', marginBottom: '0.75rem' }}>
-                                    <MapPin size={12} /> {report.jurisdiction?.ward_district || 'Location unavailable'}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-dim)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+                                    <MapPin size={14} className="text-secondary" /> {report.jurisdiction?.ward_district || 'Location unavailable'}
                                 </div>
 
-                                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                                    Submitted on {new Date(report.timestamp).toLocaleDateString()} at {new Date(report.timestamp).toLocaleTimeString()}
+                                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-dim)', borderTop: '1px solid rgba(129,140,248,0.1)', paddingTop: '0.75rem', display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>Submitted on {new Date(report.timestamp).toLocaleDateString()}</span>
+                                    <span>{new Date(report.timestamp).toLocaleTimeString()}</span>
                                 </div>
                             </div>
                         ))}
@@ -103,6 +110,7 @@ export default function MyReports() {
                 __html: `
                 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
                 .spin { animation: spin 1s linear infinite; }
+                .report-card:hover { transform: translateY(-2px); border-color: rgba(129,140,248,0.3) !important; box-shadow: 0 4px 15px rgba(129,140,248,0.1) !important; background: rgba(30,41,59,0.8) !important; }
                 `
             }} />
         </div>

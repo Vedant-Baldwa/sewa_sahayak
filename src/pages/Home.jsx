@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Camera, Map, ChevronRight, Zap, Shield, Server, ArrowUpRight } from 'lucide-react';
+import { Camera, Map, ChevronRight, Zap, Shield, Server } from 'lucide-react';
 
 const InteractiveScene = () => {
     const sceneRef = useRef(null);
@@ -112,21 +112,6 @@ const Home = ({ user }) => {
                     position: 'relative',
                     zIndex: 1
                 }}>
-                    <div className="reveal" style={{
-                        display: 'inline-flex', alignItems: 'center', gap: '8px',
-                        border: '1px solid rgba(129,140,248,0.25)',
-                        background: 'rgba(129,140,248,0.08)',
-                        padding: '6px 16px', borderRadius: '100px', fontSize: '0.8rem', fontWeight: '500',
-                        marginBottom: '2rem',
-                        color: 'var(--color-primary)',
-                        alignSelf: 'center',
-                        maxWidth: '90vw',
-                        whiteSpace: 'nowrap'
-                    }}>
-                        Sahayak System 2.0
-                        <ArrowUpRight size={14} color="#818cf8" />
-                    </div>
-
                     <h1 className="reveal delay-1" style={{
                         fontSize: 'clamp(2.5rem, 8vw, 6.5rem)',
                         lineHeight: 1.05,
