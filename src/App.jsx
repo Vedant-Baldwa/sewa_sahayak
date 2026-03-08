@@ -47,13 +47,10 @@ function App() {
     checkSession();
   }, [isOnline]);
 
-  // Detect OAuth redirect by looking for ?auth=success in the URL
+  // Detect OAuth redirect via localStorage flag set by /auth-success.html
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('auth') === 'success') {
-      // Clean URL immediately so it only runs once
-      window.history.replaceState({}, '', window.location.pathname);
-      // Re-check session so user state updates without needing a hard refresh
+    if (localStorage.getItem('auth_just_completed') === '1') {
+      localStorage.removeItem('auth_just_completed');
       checkSession();
     }
   }, []);
