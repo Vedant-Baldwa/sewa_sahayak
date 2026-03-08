@@ -8,8 +8,14 @@ const ProfilePage = ({ user }) => {
         : "March 2026";
 
     return (
-        <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
-            <div className="grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
+        <div className="app-container" style={{ padding: '4rem 2rem', maxWidth: '1200px', margin: '0 auto', minHeight: 'calc(100vh - 80px)' }}>
+
+            <div style={{ marginBottom: '3rem' }}>
+                <h1 style={{ fontSize: '2.5rem', fontWeight: 700, letterSpacing: '-0.02em', marginBottom: '0.5rem' }}>Your Profile</h1>
+                <p style={{ color: 'var(--color-text-muted)', fontSize: '1.1rem' }}>Manage your civic identity and monitor active reports.</p>
+            </div>
+
+            <div className="profile-grid">
 
                 {/* Profile Card */}
                 <div className="card-3d reveal" style={{ height: 'fit-content' }}>
@@ -58,12 +64,10 @@ const ProfilePage = ({ user }) => {
                 </div>
 
                 {/* Reports History */}
-                <div className="card-3d reveal delay-1" style={{ minHeight: '500px' }}>
-                    <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h3 style={{ fontSize: '1.25rem' }}>Recent Reports</h3>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--color-primary)', fontWeight: 600 }}>Sync Active</span>
+                <div style={{ minHeight: '500px', display: 'flex', flexDirection: 'column' }}>
+                    <div className="reveal delay-1" style={{ flex: 1, height: '100%' }}>
+                        <MyReports />
                     </div>
-                    <MyReports />
                 </div>
             </div>
         </div>
