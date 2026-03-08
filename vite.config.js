@@ -31,6 +31,10 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+      workbox: {
+        navigateFallbackDenylist: [/^\/auth-success/, /^\/authorize/, /^\/login/],
+        runtimeCaching: []
+      },
       manifest: {
         name: 'Sewa Sahayak',
         short_name: 'Sahayak',

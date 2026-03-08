@@ -46,7 +46,12 @@ app.add_middleware(
 )
 
 # Session Middleware for Authlib OAuth
-app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY") or os.urandom(24).hex())
+app.add_middleware(
+    SessionMiddleware, 
+    secret_key=os.getenv("SECRET_KEY") or os.urandom(24).hex(),
+    https_only=True,
+    same_site='lax'
+)
 
 oauth = OAuth()
 
@@ -148,7 +153,7 @@ async def authorize(request: Request):
                     print(f"Warning DB: {e}")
             
             request.session['userData'] = user_metadata
-            return RedirectResponse(url=f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/")
+            return RedirectResponse(url=f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth-success.html")
             
     except Exception as e:
         print(f"OAuth Callback Error: {e}")
@@ -172,7 +177,7 @@ async def authorize(request: Request):
             except Exception as db_e:
                 print(f"Warning DB Mock Insert: {db_e}")
                 
-        return RedirectResponse(url=f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/")
+        return RedirectResponse(url=f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth-success.html")
         
     return JSONResponse({"error": "Failed to login"}, status_code=400)
 
@@ -243,7 +248,7 @@ async def authorize_google(request: Request):
             except Exception as db_e:
                 print(f"Warning DB Mock Insert: {db_e}")
                 
-        return RedirectResponse(url=f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/")
+        return RedirectResponse(url=f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth-success.html")
         
     return JSONResponse({"error": "Failed to login with Google"}, status_code=400)
 
