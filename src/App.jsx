@@ -21,7 +21,22 @@ function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [user, setUser] = useState(null);
 
-  // Sync effect & Session Check
+  const checkSession = async () => {
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/me`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setUser({ ...data.user, userData: data.userData, token: data.token });
+        return true;
+      }
+    } catch (err) {
+      console.warn("No active session.");
+    }
+    return false;
+  };
+
+  // Sync effect & initial Session Check
   useEffect(() => {
     if (isOnline) {
       syncOfflineData();
@@ -29,21 +44,19 @@ function App() {
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
       Notification.requestPermission();
     }
-
-    const checkSession = async () => {
-      const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
-      try {
-        const res = await fetch(`${BACKEND_URL}/api/auth/me`, { credentials: "include" });
-        if (res.ok) {
-          const data = await res.json();
-          setUser({ ...data.user, userData: data.userData, token: data.token });
-        }
-      } catch (err) {
-        console.warn("No active session.");
-      }
-    };
     checkSession();
   }, [isOnline]);
+
+  // Detect OAuth redirect by looking for ?auth=success in the URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('auth') === 'success') {
+      // Clean URL immediately so it only runs once
+      window.history.replaceState({}, '', window.location.pathname);
+      // Re-check session so user state updates without needing a hard refresh
+      checkSession();
+    }
+  }, []);
 
   const syncOfflineData = async () => {
     setIsSyncing(true);
