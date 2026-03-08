@@ -73,9 +73,13 @@ jobs:
           pip install -r requirements.txt --quiet
           pip install authlib itsdangerous starlette --quiet
           
+          # Write a bash start script so PM2 doesn't treat uvicorn as a Node.js file
+          printf '#!/bin/bash\ncd /var/www/sewa_sahayak/backend\nsource venv/bin/activate\nexec uvicorn main:app --host 127.0.0.1 --port 8000\n' > /tmp/start_backend.sh
+          chmod +x /tmp/start_backend.sh
+
           # Restart Python API (PM2) - always delete+start to avoid stale cached configs
           pm2 delete sewa_backend 2>/dev/null || true
-          pm2 start venv/bin/uvicorn --name sewa_backend --cwd /var/www/sewa_sahayak/backend -- main:app --host 127.0.0.1 --port 8000
+          pm2 start /tmp/start_backend.sh --name sewa_backend
           pm2 save
           
           # Restart Nginx
