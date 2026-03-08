@@ -2,7 +2,7 @@
 
 > **🌐 Live Demo:** [http://43-205-103-222.nip.io](http://43-205-103-222.nip.io) *(hosted on AWS EC2, may have occasional downtime)*
 
-Sewa Sahayak (सेवा सहायक) is a cutting-edge civic-tech platform that leverages **Amazon Bedrock's multi-modal AI** and **Amazon Nova Act's browser automation** to bridge the "Reporting Wall" between Indian citizens and government portals.
+Sewa Sahayak (सेवा सहायक) is a cutting-edge civic-tech platform that leverages **Amazon SageMaker**, **Amazon Bedrock's multi-modal AI**, and **Amazon Nova Act's browser automation** to bridge the "Reporting Wall" between Indian citizens and government portals.
 
 By transforming unstructured citizen evidence (dashcam footage, audio, and photos) into structured, data-rich official reports, the platform reduces reporting time from **15+ minutes to under 3 minutes**, significantly increasing civic participation in urban infrastructure maintenance.
 
@@ -12,7 +12,7 @@ By transforming unstructured citizen evidence (dashcam footage, audio, and photo
 
 ### 🎥 Dashcam AI Detection Pipeline
 - Upload a dashcam video of any length — long videos are automatically split into 10-second segments via **FFmpeg**.
-- Each segment is analysed by **Amazon Rekognition** (frame extraction) and **Amazon Bedrock (Nova Pro)** to detect potholes, their severity, and GPS coordinates.
+- Each segment is analysed by a custom Road Damage Detection model hosted on **Amazon SageMaker**, along with **Amazon Rekognition** (frame extraction) and **Amazon Bedrock (Nova Pro)** to detect potholes, their severity, and GPS coordinates.
 - Per-user event store keeps detections private and isolated from other users' data.
 
 ### 🗺️ Interactive Pothole Map
@@ -78,6 +78,7 @@ By transforming unstructured citizen evidence (dashcam footage, audio, and photo
 ### AWS Services
 | Service | Role |
 |---|---|
+| **Amazon SageMaker** | Hosting custom Road Damage Detection model endpoint |
 | **Amazon Bedrock (Nova Pro)** | Multi-modal damage analysis + portal routing |
 | **Amazon Rekognition** | Pothole frame detection + PII (face/plate) redaction |
 | **Amazon Transcribe** | Indic-language audio transcription |
@@ -95,7 +96,7 @@ By transforming unstructured citizen evidence (dashcam footage, audio, and photo
 - **Python 3.10+**
 - **FFmpeg** installed and on `PATH`
 - **AWS CLI** configured (`ap-south-1` region)
-- Access to Bedrock (Nova Pro), Rekognition, Transcribe, Location Service
+- Access to SageMaker, Bedrock (Nova Pro), Rekognition, Transcribe, Location Service
 
 ### 1. Clone the Repository
 ```bash
@@ -141,6 +142,7 @@ API docs (Swagger) at `http://localhost:8000/docs`.
 | `AWS_REGION` | ✅ | AWS region for all services (default: `ap-south-1`) |
 | `AWS_ACCESS_KEY_ID` | ✅ (local dev) | IAM access key — use IAM roles in production |
 | `AWS_SECRET_ACCESS_KEY` | ✅ (local dev) | IAM secret key — use IAM roles in production |
+| `SAGEMAKER_ENDPOINT_NAME` | ⚠️ | SageMaker Endpoint name for the Road Damage Detection model |
 | `S3_BUCKET_NAME` | ✅ | S3 bucket for evidence storage |
 | `DYNAMODB_TABLE` | ✅ | DynamoDB table for reports (default: `sewa_sahayak_reports`) |
 | `USERS_TABLE_NAME` | ✅ | DynamoDB table for user profiles (default: `sewa_sahayak_users`) |
@@ -173,6 +175,7 @@ graph TB
     end
 
     subgraph "AI & ML (AWS)"
+        SAGEMAKER[Amazon SageMaker]
         BEDROCK[Amazon Bedrock · Nova Pro]
         REKOGNITION[Amazon Rekognition]
         TRANSCRIBE[Amazon Transcribe]
@@ -186,7 +189,7 @@ graph TB
 
     UI <--> API
     API <--> CORE <--> SVC
-    SVC <--> BEDROCK & REKOGNITION & TRANSCRIBE
+    SVC <--> SAGEMAKER & BEDROCK & REKOGNITION & TRANSCRIBE
     SVC <--> S3 & DYNAMO & AUTH
 ```
 
@@ -194,9 +197,10 @@ graph TB
 
 ## 🚢 Deployment
 
-The app is deployed on an **AWS EC2 instance** (Mumbai — `ap-south-1`) behind **Nginx**.
+The app is deployed on an **AWS EC2 instance** (Mumbai — `ap-south-1`) behind **Nginx**, with **SageMaker** handling ML workloads.
 
 ### Infrastructure
+- **SageMaker** hosts the custom Road Damage Detection model on a dedicated endpoint.
 - **EC2** runs both the Nginx reverse proxy and the FastAPI backend (via PM2).
 - **Nginx** serves the Vite `dist/` build as static files and proxies `/api/*`, `/login`, and `/authorize` to FastAPI on port `8000`.
 - **PM2** keeps the FastAPI process alive and auto-restarts it on crash.
