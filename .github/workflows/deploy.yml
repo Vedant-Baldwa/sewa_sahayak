@@ -45,8 +45,8 @@ jobs:
         # Disable strict host checking globally for this job since the IP might change
         echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
         
-        # Rsync the entire repository (excluding git/node_modules) and the built dist folder
-        rsync -avz --delete --exclude='.git' --exclude='node_modules' --exclude='.env' --exclude='*.pem' -e "ssh -i ~/.ssh/deploy_key" ./ $USER@$CLEAN_HOST:/var/www/sewa_sahayak/
+        # Rsync the entire repository (excluding git/node_modules/venv) and the built dist folder
+        rsync -avz --delete --exclude='.git' --exclude='node_modules' --exclude='backend/venv' --exclude='backend/__pycache__' --exclude='.env' --exclude='*.pem' -e "ssh -i ~/.ssh/deploy_key" ./ $USER@$CLEAN_HOST:/var/www/sewa_sahayak/
 
     - name: Restart Backend & Nginx on EC2
       env:
@@ -68,6 +68,7 @@ jobs:
           cd /var/www/sewa_sahayak/backend
           
           # Install dependencies securely in venv
+          python3 -m venv venv
           source venv/bin/activate
           pip install -r requirements.txt --quiet
           pip install authlib itsdangerous starlette --quiet
