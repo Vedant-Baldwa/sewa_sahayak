@@ -20,7 +20,7 @@ import uuid
 import io
 from aws_services.transcribe import upload_audio_to_s3, start_transcription_job, poll_transcription_job, extract_transcript
 from aws_services.location import reverse_geocode, verify_address
-from aws_services.bedrock import get_portal_routing
+from aws_services.bedrock import get_portal_routing, generate_complaint_draft, generate_cluster_complaint
 from aws_services.nova_act_scraper import extract_form_fields
 from aws_services.detection_worker import process_video_segment
 from aws_services.rekognition import RekognitionService
@@ -750,24 +750,17 @@ def route_complaint(route_req: RouteRequest):
 
 # Feature 6 Endpoint
 @app.post("/api/draft")
-async def mock_generate_draft(data: dict):
-    print(f"[Amazon Bedrock] Generating draft for data: {data}")
-    time.sleep(2.0)
+async def generate_draft_endpoint(data: dict):
+    print(f"[Amazon Bedrock] Generating dynamic AI draft for data: {data}")
     
-    analysis_desc = data.get("analysis", {}).get("suggested_description", "")
-    transcript_desc = data.get("transcription", {}).get("transcript", "")
+    # Use the Bedrock service to generate a professional draft
+    draft = generate_complaint_draft(data)
     
-    description = analysis_desc or ("Voice Report: " + transcript_desc) or "Observed civic issue."
-    
-    return {
-        "applicantName": "A Citizen",
-        "phoneNumber": "+91-9876543210",
-        "damageType": data.get("analysis", {}).get("damage_type") or "Civic Issue",
-        "severity": data.get("analysis", {}).get("severity") or "Medium",
-        "jurisdiction": data.get("jurisdiction", {}).get("portal_name") or "Municipal Corporation",
-        "ward": data.get("jurisdiction", {}).get("ward_district") or "Default Ward",
-        "description": f"To the concerned authority,\n\nI am reporting a issue regarding civic hazard.\n\nDetails:\n{description}\n\nPlease address this at your earliest convenience.\n\nThank you.",
-    }
+    # Ensure some fields are present even if LLM missed them
+    if not draft.get("phoneNumber"):
+        draft["phoneNumber"] = "+91-9876543210"
+        
+    return draft
 
 # Serve static assets from Vite dist folder (only if built)
 _dist_assets_dir = os.path.join(os.path.dirname(__file__), "..", "dist", "assets")
@@ -1062,25 +1055,18 @@ class ComplaintRequest(BaseModel):
 @app.post("/api/reports/generate_complaint")
 def generate_pothole_complaint(req: ComplaintRequest):
     """
-    Uses Amazon Bedrock (Nova Pro stub) to write a formal draft.
+    Uses Amazon Bedrock to generate a professional cluster complaint.
     """
-    print(f"[Bedrock] Generating structured complaint for cluster {req.cluster_id}")
-    print(f"[Bedrock] Portal: {req.portal_name} ({req.portal_url}) | Sub-area: {req.sub_area}")
-    time.sleep(1.5)
+    print(f"[Bedrock] Generating dynamic AI complaint for cluster {req.cluster_id}")
+    
+    # Convert request to dict for Bedrock service
+    data = req.dict()
+    
+    # Generate AI draft
+    draft_text = generate_cluster_complaint(data)
     
     authority = req.portal_name if req.portal_name != "Unknown" else (
         "Municipal Corporation" if "Road" in req.road_name else "NHAI"
-    )
-    
-    draft_text = (
-        f"To the concerned {authority},\n\n"
-        f"This is an automated citizen alert regarding severe road damage.\n"
-        f"Location: {req.sub_area or req.road_name} (GPS: {req.latitude}, {req.longitude})\n"
-        f"Severity: {req.severity.upper()}\n"
-        f"Observations: Over {req.event_count} separate dashcam events have recorded deep potholes in this exact area over the last 48 hours.\n\n"
-        f"We kindly request an immediate inspection and repair of this section to prevent potential accidents.\n\n"
-        f"Evidence clips are available upon request via the Sewa Sahayak portal.\n"
-        f"Filing Portal: {req.portal_url}"
     )
     
     return {
