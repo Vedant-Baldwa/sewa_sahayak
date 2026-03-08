@@ -20,12 +20,7 @@ By transforming unstructured citizen evidence (dashcam footage, audio, and photo
 - Each cluster shows event count, worst severity, representative video clip, and the best extracted frames.
 - One-click **"File Complaint"** marks a cluster as filed — the map pin is removed and a DynamoDB report is saved.
 
-### 🔊 Voice Transcription (Regional Languages)
-- Record or upload audio in any Indian language.
-- Transcribed live via **Amazon Transcribe** with Indic language support.
-- Transcript is used to pre-populate the report draft.
-
-### 🛡️ Automatic PII Redaction
+### ️ Automatic PII Redaction
 - Images uploaded as evidence are automatically scanned by **Amazon Rekognition**.
 - Faces and license plates are blurred before storage in S3.
 - Live camera preview also supports real-time coordinate-based blurring.
@@ -81,7 +76,6 @@ By transforming unstructured citizen evidence (dashcam footage, audio, and photo
 | **Amazon SageMaker** | Hosting custom Road Damage Detection model endpoint |
 | **Amazon Bedrock (Nova Pro)** | Multi-modal damage analysis + portal routing |
 | **Amazon Rekognition** | Pothole frame detection + PII (face/plate) redaction |
-| **Amazon Transcribe** | Indic-language audio transcription |
 | **Amazon S3** | Evidence vault — images, audio, video clips |
 | **Amazon DynamoDB** | Reports table + Users table |
 | **AWS Cognito** | Hosted UI authentication |
@@ -96,7 +90,7 @@ By transforming unstructured citizen evidence (dashcam footage, audio, and photo
 - **Python 3.10+**
 - **FFmpeg** installed and on `PATH`
 - **AWS CLI** configured (`ap-south-1` region)
-- Access to SageMaker, Bedrock (Nova Pro), Rekognition, Transcribe, Location Service
+- Access to SageMaker, Bedrock (Nova Pro), Rekognition, Location Service
 
 ### 1. Clone the Repository
 ```bash
@@ -178,7 +172,6 @@ graph TB
         SAGEMAKER[Amazon SageMaker]
         BEDROCK[Amazon Bedrock · Nova Pro]
         REKOGNITION[Amazon Rekognition]
-        TRANSCRIBE[Amazon Transcribe]
     end
 
     subgraph "Data & Auth"
@@ -189,7 +182,7 @@ graph TB
 
     UI <--> API
     API <--> CORE <--> SVC
-    SVC <--> SAGEMAKER & BEDROCK & REKOGNITION & TRANSCRIBE
+    SVC <--> SAGEMAKER & BEDROCK & REKOGNITION
     SVC <--> S3 & DYNAMO & AUTH
 ```
 
