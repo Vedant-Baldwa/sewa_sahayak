@@ -20,11 +20,6 @@ By transforming unstructured citizen evidence (dashcam footage, audio, and photo
 - Each cluster shows event count, worst severity, representative video clip, and the best extracted frames.
 - One-click **"File Complaint"** marks a cluster as filed — the map pin is removed and a DynamoDB report is saved.
 
-### 🤖 Agentic Form Filling (Nova Act)
-- After location routing, **Amazon Nova Act** scrapes the target government portal's form schema automatically.
-- Supports CPGRAMS, NHAI, AMC, Gujarat Swagat, and many more portals via `portals.json`.
-- Draft complaints are pre-filled by Bedrock and reviewed in-browser before submission.
-
 ### 🔊 Voice Transcription (Regional Languages)
 - Record or upload audio in any Indian language.
 - Transcribed live via **Amazon Transcribe** with Indic language support.
@@ -78,14 +73,12 @@ By transforming unstructured citizen evidence (dashcam footage, audio, and photo
 | **OpenCV (headless)** | Video frame extraction |
 | **NumPy + Pillow** | Image processing & PII blurring |
 | **FFmpeg** | Long-video segmentation |
-| **Playwright** | Browser automation backend for Nova Act |
 | **Boto3** | AWS SDK |
 
 ### AWS Services
 | Service | Role |
 |---|---|
 | **Amazon Bedrock (Nova Pro)** | Multi-modal damage analysis + portal routing |
-| **Amazon Nova Act** | Agentic form-field scraping on government portals |
 | **Amazon Rekognition** | Pothole frame detection + PII (face/plate) redaction |
 | **Amazon Transcribe** | Indic-language audio transcription |
 | **Amazon S3** | Evidence vault — images, audio, video clips |
@@ -102,7 +95,7 @@ By transforming unstructured citizen evidence (dashcam footage, audio, and photo
 - **Python 3.10+**
 - **FFmpeg** installed and on `PATH`
 - **AWS CLI** configured (`ap-south-1` region)
-- Access to Bedrock (Nova Pro), Nova Act, Rekognition, Transcribe, Location Service
+- Access to Bedrock (Nova Pro), Rekognition, Transcribe, Location Service
 
 ### 1. Clone the Repository
 ```bash
@@ -183,11 +176,6 @@ graph TB
         BEDROCK[Amazon Bedrock · Nova Pro]
         REKOGNITION[Amazon Rekognition]
         TRANSCRIBE[Amazon Transcribe]
-    end
-
-    subgraph "Web Automation"
-        NOVA[Amazon Nova Act]
-        BROWSER[Headless Browser Engine]
     end
 
     subgraph "Data & Auth"
