@@ -25,7 +25,7 @@ except Exception:
     PORTALS_DB = {}
 
 # --- SageMaker YOLO Client ---
-SAGEMAKER_ENDPOINT = os.getenv("SAGEMAKER_ENDPOINT_NAME", "road-damage-yolov8-endpoint-serverless")
+SAGEMAKER_ENDPOINT = "road-damage-yolov8-endpoint-serverless"
 SAGEMAKER_REGION = os.getenv("SAGEMAKER_REGION", os.getenv("AWS_REGION", "ap-south-1"))
 
 _sagemaker_client = None
