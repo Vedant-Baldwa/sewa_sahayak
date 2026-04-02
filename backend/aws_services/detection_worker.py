@@ -5,12 +5,13 @@ import uuid
 import shutil
 import json
 import boto3
+from botocore.config import Config
 import cv2
 import numpy as np
 
-from aws_services.location import reverse_geocode
-from aws_services.bedrock import get_portal_routing
-from aws_services.rekognition import RekognitionService
+from .location import reverse_geocode
+from .bedrock import get_portal_routing
+from .rekognition import RekognitionService
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,7 +25,7 @@ except Exception:
     PORTALS_DB = {}
 
 # --- SageMaker YOLO Client ---
-SAGEMAKER_ENDPOINT = os.getenv("SAGEMAKER_ENDPOINT_NAME", "road-damage-yolov8-endpoint")
+SAGEMAKER_ENDPOINT = os.getenv("SAGEMAKER_ENDPOINT_NAME", "road-damage-yolov8-endpoint-serverless")
 SAGEMAKER_REGION = os.getenv("SAGEMAKER_REGION", os.getenv("AWS_REGION", "ap-south-1"))
 
 _sagemaker_client = None
@@ -34,8 +35,16 @@ def _get_sagemaker_client():
     """Lazily initialise the SageMaker Runtime client."""
     global _sagemaker_client
     if _sagemaker_client is None:
+        # Serverless endpoints can have cold-start latency; keep the read timeout high.
+        # Also keep retries low so we don't stack multiple long requests.
+        my_config = Config(
+            read_timeout=int(os.getenv("SAGEMAKER_READ_TIMEOUT_SECONDS", "120")),
+            connect_timeout=int(os.getenv("SAGEMAKER_CONNECT_TIMEOUT_SECONDS", "10")),
+            retries={"max_attempts": int(os.getenv("SAGEMAKER_MAX_ATTEMPTS", "1"))},
+        )
         _sagemaker_client = boto3.client(
             'sagemaker-runtime',
+            config=my_config,
             region_name=SAGEMAKER_REGION,
             aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
             aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
