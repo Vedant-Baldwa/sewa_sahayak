@@ -21,7 +21,6 @@ import io
 from aws_services.transcribe import upload_audio_to_s3, start_transcription_job, poll_transcription_job, extract_transcript
 from aws_services.location import reverse_geocode, verify_address
 from aws_services.bedrock import get_portal_routing, generate_complaint_draft, generate_cluster_complaint
-from aws_services.nova_act_scraper import extract_form_fields
 from aws_services.detection_worker import process_video_segment
 from aws_services.rekognition import RekognitionService
 import json
@@ -909,14 +908,18 @@ def mark_cluster_filed(req: MarkFiledRequest, request: Request):
             report_data = {
                 "ticketId": f"FILED-{req.cluster_id}-{int(time.time())}",
                 "userId": user_id,
-                "jurisdiction": req.portal_name,
-                "ward": req.sub_area,
+                "jurisdiction": {
+                    "portal_name": req.portal_name,
+                    "ward_district": req.sub_area,
+                    "portal_url": req.portal_url
+                },
+                "ward": req.sub_area,  # backward-compat for older frontend schemas
                 "lat": str(req.latitude),
                 "lng": str(req.longitude),
                 "damageType": "Road Damage Cluster",
                 "severity": "High",
                 "status": "Submitted to Portal",
-                "timestamp": str(int(time.time() * 1000)),
+                "timestamp": int(time.time() * 1000),
                 "description": f"Automated dashcam report filed to {req.portal_name} for area {req.sub_area}."
             }
             reports_table.put_item(Item=report_data)

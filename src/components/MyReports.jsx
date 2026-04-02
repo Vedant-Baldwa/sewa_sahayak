@@ -3,6 +3,29 @@ import { Archive, Clock, MapPin, RefreshCw, Loader2 } from 'lucide-react';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
 
+function normalizeTimestampToMs(value) {
+    if (value === null || value === undefined) return null;
+
+    if (typeof value === "number") {
+        return value < 1e12 ? value * 1000 : value;
+    }
+
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (/^\d+$/.test(trimmed)) {
+            const numeric = Number(trimmed);
+            if (!Number.isNaN(numeric)) {
+                return numeric < 1e12 ? numeric * 1000 : numeric;
+            }
+        }
+
+        const parsed = Date.parse(trimmed);
+        return Number.isNaN(parsed) ? null : parsed;
+    }
+
+    return null;
+}
+
 export default function MyReports() {
     const [reports, setReports] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -73,7 +96,26 @@ export default function MyReports() {
                     </div>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        {reports.map((report) => (
+                        {reports.map((report) => {
+                            const timestampMs = normalizeTimestampToMs(report.timestamp);
+                            const submittedAt = timestampMs ? new Date(timestampMs) : null;
+
+                            const jurisdiction = report.jurisdiction;
+                            const portalName =
+                                (jurisdiction && typeof jurisdiction === "object" && jurisdiction.portal_name) ? jurisdiction.portal_name :
+                                (typeof jurisdiction === "string" ? jurisdiction : null);
+
+                            const locationText =
+                                (jurisdiction && typeof jurisdiction === "object" && jurisdiction.ward_district) ? jurisdiction.ward_district :
+                                report.ward ||
+                                report.sub_area ||
+                                report.address ||
+                                'Location unavailable';
+
+                            const dateLabel = submittedAt ? submittedAt.toLocaleDateString() : "Unknown date";
+                            const timeLabel = submittedAt ? submittedAt.toLocaleTimeString() : "";
+
+                            return (
                             <div key={report.ticketId} className="report-card" style={{
                                 background: 'var(--color-surface)',
                                 padding: '1.25rem',
@@ -90,18 +132,19 @@ export default function MyReports() {
                                     </span>
                                 </div>
 
-                                <h4 style={{ fontWeight: '600', fontSize: '1.05rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>{report.jurisdiction?.portal_name || report.damageType || 'Government Portal'}</h4>
+                                <h4 style={{ fontWeight: '600', fontSize: '1.05rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>{portalName || report.damageType || 'Government Portal'}</h4>
 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-dim)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-                                    <MapPin size={14} className="text-secondary" /> {report.jurisdiction?.ward_district || 'Location unavailable'}
+                                    <MapPin size={14} className="text-secondary" /> {locationText}
                                 </div>
 
                                 <div style={{ fontSize: '0.75rem', color: 'var(--color-text-dim)', borderTop: '1px solid rgba(129,140,248,0.1)', paddingTop: '0.75rem', display: 'flex', justifyContent: 'space-between' }}>
-                                    <span>Submitted on {new Date(report.timestamp).toLocaleDateString()}</span>
-                                    <span>{new Date(report.timestamp).toLocaleTimeString()}</span>
+                                    <span>Submitted on {dateLabel}</span>
+                                    <span>{timeLabel}</span>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </div>

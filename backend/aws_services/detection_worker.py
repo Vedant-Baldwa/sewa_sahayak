@@ -234,27 +234,79 @@ def process_video_segment(filepath: str, metadata: dict, reports_table=None, eve
     print(f"[Detection Worker] Total detections across frames: {len(all_predictions)}")
 
     # --- Step 4: Clip Extraction ---
-    clip_filename = f"clip_{str(uuid.uuid4())[:8]}.mp4"
+    # Always try to produce a browser-friendly MP4 (H.264, moov atom at start).
+    # If FFmpeg is unavailable, fall back to the original container/codec.
+    clip_id = str(uuid.uuid4())[:8]
+    input_ext = (os.path.splitext(filepath)[1] or "").lower()
+    clip_filename = f"clip_{clip_id}.mp4"
     clip_path = os.path.join(os.path.dirname(filepath), clip_filename)
+
+    def _ensure_even_scale_filter() -> str:
+        return "scale=trunc(iw/2)*2:trunc(ih/2)*2"
 
     try:
         subprocess.run(
-            ["ffmpeg", "-i", filepath, "-ss", "00:00:01", "-to", "00:00:03", "-c", "copy", clip_path],
-            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                filepath,
+                "-ss",
+                "00:00:01",
+                "-t",
+                "00:00:02",
+                "-vf",
+                _ensure_even_scale_filter(),
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-crf",
+                "28",
+                "-preset",
+                "veryfast",
+                "-an",
+                "-movflags",
+                "+faststart",
+                clip_path,
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
-        print(f"[Detection Worker] FFmpeg Extracted Raw Clip: {clip_filename}")
-        
-        # Redact the clip using Rekognition
+        print(f"[Detection Worker] FFmpeg Extracted Clip (H.264 MP4): {clip_filename}")
+
+        # Redact the clip using Rekognition (best-effort)
         try:
             print(f"[Detection Worker] Starting PII redaction for evidence clip...")
             redacted_clip_path = clip_path.replace(".mp4", "_redacted.mp4")
             rekog = _get_rekognition_service()
             if rekog.redact_video(clip_path, redacted_clip_path):
-                # Final pass with FFmpeg to ensure web compatibility (H.264)
                 final_clip_path = clip_path.replace(".mp4", "_final.mp4")
                 subprocess.run(
-                    ["ffmpeg", "-y", "-i", redacted_clip_path, "-vcodec", "libx264", "-crf", "28", "-an", final_clip_path],
-                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    [
+                        "ffmpeg",
+                        "-y",
+                        "-i",
+                        redacted_clip_path,
+                        "-vf",
+                        _ensure_even_scale_filter(),
+                        "-c:v",
+                        "libx264",
+                        "-pix_fmt",
+                        "yuv420p",
+                        "-crf",
+                        "28",
+                        "-preset",
+                        "veryfast",
+                        "-an",
+                        "-movflags",
+                        "+faststart",
+                        final_clip_path,
+                    ],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                 )
                 os.remove(clip_path)
                 os.remove(redacted_clip_path)
@@ -263,8 +315,12 @@ def process_video_segment(filepath: str, metadata: dict, reports_table=None, eve
         except Exception as e:
             print(f"[Detection Worker] Video redaction failed: {e}")
 
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        print(f"[Detection Worker] FFmpeg unavailable or failed. Using original segment.")
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        # Likely happens when input is WebM and we can't transcode, or FFmpeg is missing.
+        fallback_ext = input_ext if input_ext else ".webm"
+        clip_filename = f"clip_{clip_id}{fallback_ext}"
+        clip_path = os.path.join(os.path.dirname(filepath), clip_filename)
+        print(f"[Detection Worker] FFmpeg transcode failed ({e}). Falling back to original segment: {clip_filename}")
         shutil.copy2(filepath, clip_path)
 
     # --- Step 4.5: Best Images Extraction ---
