@@ -9,6 +9,8 @@ const DashcamRecorder = () => {
     const mediaRecorderRef = useRef(null);
     const streamRef = useRef(null);
     const isOnline = useOnlineStatus();
+    const syncInFlightRef = useRef(false);
+    const pendingStopRef = useRef(Promise.resolve());
 
     const [isRecording, setIsRecording] = useState(false);
     const [segmentsCount, setSegmentsCount] = useState(0);
@@ -95,15 +97,16 @@ const DashcamRecorder = () => {
 
     // Sync background loop
     const syncSegments = useCallback(async () => {
-        if (!isOnline || isUploading) return;
+        if (!isOnline) return;
+        if (syncInFlightRef.current) return;
         const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
         try {
+            syncInFlightRef.current = true;
             setIsUploading(true);
             const unsynced = await getUnsyncedDashcamSegments();
             setUnsyncedCount(unsynced.length);
 
             if (unsynced.length === 0) {
-                setIsUploading(false);
                 return;
             }
 
@@ -135,8 +138,9 @@ const DashcamRecorder = () => {
             console.error("Error during sync iteration", err);
         } finally {
             setIsUploading(false);
+            syncInFlightRef.current = false;
         }
-    }, [isOnline, isUploading]);
+    }, [isOnline]);
 
     useEffect(() => {
         let intervalId;
@@ -160,22 +164,31 @@ const DashcamRecorder = () => {
             if (event.data && event.data.size > 0) chunks.push(event.data);
         };
 
+        let resolveStopped;
+        pendingStopRef.current = new Promise((resolve) => {
+            resolveStopped = resolve;
+        });
+
         recorder.onstop = async () => {
-            if (chunks.length === 0) return;
-            const completeBlob = new Blob(chunks, { type: selectedTypeRef.current });
+            try {
+                if (chunks.length === 0) return;
+                const completeBlob = new Blob(chunks, { type: selectedTypeRef.current });
 
-            let loc = null;
-            try { loc = await getDeviceLocation(); } catch (e) { }
+                let loc = null;
+                try { loc = await getDeviceLocation(); } catch { /* ignore */ }
 
-            await saveDashcamSegment(completeBlob, {
-                mimeType: selectedTypeRef.current,
-                lat: loc?.lat,
-                lng: loc?.lng
-            });
+                await saveDashcamSegment(completeBlob, {
+                    mimeType: selectedTypeRef.current,
+                    lat: loc?.lat,
+                    lng: loc?.lng
+                });
 
-            setSegmentsCount(prev => prev + 1);
-            setUnsyncedCount(prev => prev + 1);
-            if (navigator.onLine) syncSegments();
+                setSegmentsCount(prev => prev + 1);
+                setUnsyncedCount(prev => prev + 1);
+                if (navigator.onLine) await syncSegments();
+            } finally {
+                if (resolveStopped) resolveStopped();
+            }
         };
 
         recorder.start();
@@ -188,10 +201,19 @@ const DashcamRecorder = () => {
                 clearInterval(cycleIntervalRef.current);
                 cycleIntervalRef.current = null;
             }
+            const pendingStop = pendingStopRef.current;
             if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
                 mediaRecorderRef.current.stop();
             }
             setIsRecording(false);
+
+            // Ensure the last segment is saved to IndexedDB, then flush the queue.
+            try {
+                await pendingStop;
+            } catch {
+                /* ignore */
+            }
+            if (navigator.onLine) await syncSegments();
             return;
         }
 
@@ -210,6 +232,9 @@ const DashcamRecorder = () => {
                 }
             }
 
+            // Flush any queued segments when monitoring starts again.
+            if (navigator.onLine) await syncSegments();
+
             setIsRecording(true);
             setSegmentsCount(0);
             startSingleRecording();
@@ -220,7 +245,7 @@ const DashcamRecorder = () => {
                 startSingleRecording();
             }, 5000);
 
-        } catch (err) {
+        } catch {
             setErrorMSG("Failed to start recording.");
         }
     };
