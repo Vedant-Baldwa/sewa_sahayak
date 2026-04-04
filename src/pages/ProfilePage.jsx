@@ -33,10 +33,10 @@ const ProfilePage = ({ user }) => {
                             fontWeight: 'bold',
                             boxShadow: '0 0 30px var(--color-primary-glow)'
                         }}>
-                            {user?.name ? user.name.charAt(0).toUpperCase() : <User size={40} />}
+                            { (user?.userData?.name || user?.name) ? (user?.userData?.name || user?.name).charAt(0).toUpperCase() : <User size={40} />}
                         </div>
 
-                        <h2 style={{ fontSize: '1.75rem', marginBottom: '0.25rem' }}>{user?.name || "Citizen Reporter"}</h2>
+                        <h2 style={{ fontSize: '1.75rem', marginBottom: '0.25rem' }}>{user?.userData?.name || user?.name || "Citizen Reporter"}</h2>
                         <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem' }}>{user?.email}</p>
 
                         <div style={{
