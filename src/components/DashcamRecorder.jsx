@@ -69,7 +69,12 @@ const DashcamRecorder = () => {
     const startCamera = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment' },
+                video: {
+                    facingMode: { ideal: 'environment' },
+                    width: { ideal: 640, max: 960 },
+                    height: { ideal: 360, max: 540 },
+                    frameRate: { ideal: 15, max: 20 }
+                },
                 audio: false
             });
             if (videoRef.current) {
@@ -158,7 +163,10 @@ const DashcamRecorder = () => {
         if (!streamRef.current) return;
 
         const chunks = [];
-        const recorder = new MediaRecorder(streamRef.current, { mimeType: selectedTypeRef.current });
+        const recorder = new MediaRecorder(streamRef.current, {
+            mimeType: selectedTypeRef.current,
+            videoBitsPerSecond: 450_000
+        });
 
         recorder.ondataavailable = (event) => {
             if (event.data && event.data.size > 0) chunks.push(event.data);
@@ -191,7 +199,7 @@ const DashcamRecorder = () => {
             }
         };
 
-        recorder.start();
+        recorder.start(1000);
         mediaRecorderRef.current = recorder;
     }, [syncSegments]);
 

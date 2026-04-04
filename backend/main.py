@@ -6,7 +6,7 @@ load_dotenv()
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
 from fastapi import FastAPI, File, UploadFile, Form
-from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Depends, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse, StreamingResponse
@@ -26,6 +26,7 @@ from aws_services.rekognition import RekognitionService
 import json
 import os
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 
 # Load environment variables from .env file
 load_dotenv()
@@ -34,6 +35,7 @@ mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
 
 app = FastAPI(title="Sewa Sahayak PWA API (Mock)")
+_dashcam_executor = ThreadPoolExecutor(max_workers=int(os.getenv("DASHCAM_WORKERS", "2")))
 
 # CORS Middleware to allow requests from the Vite frontend
 app.add_middleware(
@@ -321,7 +323,6 @@ async def upload_evidence_to_s3(evidence: UploadFile = File(...), ticketId: str 
 @app.post("/api/dashcam/upload")
 async def upload_dashcam_segment(
     request: Request,
-    background_tasks: BackgroundTasks,
     segment: UploadFile = File(...), 
     lat: str = Form(None), 
     lng: str = Form(None)
@@ -392,11 +393,9 @@ async def upload_dashcam_segment(
         if not segment_paths:
             return {"message": "Failed to split video", "status": "error"}
 
-        # Queue each sub-segment for background processing
+        # Queue each sub-segment for asynchronous processing
         for seg_path in segment_paths:
-            background_tasks.add_task(
-                process_video_segment, seg_path, metadata, reports_table, POTHOLE_EVENTS[user_id]
-            )
+            _dashcam_executor.submit(process_video_segment, seg_path, metadata, reports_table, POTHOLE_EVENTS[user_id])
 
         return {
             "message": f"Video split into {len(segment_paths)} segments, all queued for AI detection",
@@ -404,8 +403,8 @@ async def upload_dashcam_segment(
             "segments": len(segment_paths)
         }
     else:
-        # Short video (≤ SEGMENT_DURATION seconds) – process directly
-        background_tasks.add_task(process_video_segment, temp_path, metadata, reports_table, POTHOLE_EVENTS[user_id])
+        # Short video segment: process asynchronously
+        _dashcam_executor.submit(process_video_segment, temp_path, metadata, reports_table, POTHOLE_EVENTS[user_id])
         return {"message": "Segment queued for AI detection", "status": "processing"}
 
 # --- Engineer 1: Database (DynamoDB Reports Table) ---
