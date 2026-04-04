@@ -63,7 +63,7 @@ oauth.register(
     client_id=os.getenv("COGNITO_CLIENT_ID", "mock-client-id"),
     client_secret=os.getenv("COGNITO_CLIENT_SECRET", "mock-secret"),
     server_metadata_url=cognito_metadata_url,
-    client_kwargs={'scope': 'email openid phone profile'}
+    client_kwargs={'scope': 'email openid phone'}
 )
 
 oauth.register(
