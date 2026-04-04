@@ -126,33 +126,44 @@ async def authorize(request: Request):
         token = await oauth.cognito.authorize_access_token(request)
         user = token.get('userinfo')
         if user:
-            request.session['user'] = user
             # Avoid saving id_token and access_token in session. They exceed 4KB cookie limits!
             
             uuid_sub = user.get('sub')
+            user_email = user.get('email', '')
             user_metadata = None
             if uuid_sub and users_table:
                 try:
-                    db_response = users_table.get_item(Key={'userId': uuid_sub})
-                    user_metadata = db_response.get('Item')
+                    from boto3.dynamodb.conditions import Attr
+                    if user_email:
+                        response = users_table.scan(FilterExpression=Attr('email').eq(user_email))
+                        if response.get('Items'):
+                            user_metadata = response['Items'][0]
+                            uuid_sub = user_metadata.get('userId')
+                            user['sub'] = uuid_sub
+                    
+                    if not user_metadata:
+                        db_response = users_table.get_item(Key={'userId': uuid_sub})
+                        user_metadata = db_response.get('Item')
 
-                    # First login — create a new user record
                     if not user_metadata:
                         import time as _time
+                        extracted_name = user.get('name')
+                        if not extracted_name and user_email:
+                            extracted_name = user_email.split('@')[0]
+                            
                         user_metadata = {
                             'userId':       uuid_sub,
-                            'email':        user.get('email', ''),
+                            'name':         extracted_name or '',
+                            'email':        user_email,
                             'phone_number': user.get('phone_number', ''),
                             'createdAt':    str(int(_time.time())),
                         }
                         users_table.put_item(Item=user_metadata)
-                        print(f"New user created in DynamoDB: {uuid_sub}")
-                    else:
-                        print(f"Returning user found in DynamoDB: {uuid_sub}")
-
+                        
                 except Exception as e:
                     print(f"Warning DB: {e}")
             
+            request.session['user'] = user
             request.session['userData'] = user_metadata
             return RedirectResponse(url=f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/auth-success.html")
             
@@ -197,33 +208,41 @@ async def authorize_google(request: Request):
         token = await oauth.google.authorize_access_token(request)
         user = token.get('userinfo')
         if user:
-            request.session['user'] = user
             # Avoid saving large tokens inside session dict
             
             uuid_sub = user.get('sub')
+            user_email = user.get('email', '')
             user_metadata = None
             if uuid_sub and users_table:
                 try:
-                    db_response = users_table.get_item(Key={'userId': uuid_sub})
-                    user_metadata = db_response.get('Item')
+                    from boto3.dynamodb.conditions import Attr
+                    if user_email:
+                        response = users_table.scan(FilterExpression=Attr('email').eq(user_email))
+                        if response.get('Items'):
+                            user_metadata = response['Items'][0]
+                            uuid_sub = user_metadata.get('userId')
+                            user['sub'] = uuid_sub
+                    
+                    if not user_metadata:
+                        db_response = users_table.get_item(Key={'userId': uuid_sub})
+                        user_metadata = db_response.get('Item')
 
                     if not user_metadata:
                         import time as _time
                         user_metadata = {
                             'userId':       uuid_sub,
-                            'email':        user.get('email', ''),
-                            'phone_number': '', # Google might not give phone based on scope
+                            'name':         user.get('name', ''),
+                            'email':        user_email,
+                            'phone_number': '',
                             'createdAt':    str(int(_time.time())),
                             'provider':     'google'
                         }
                         users_table.put_item(Item=user_metadata)
-                        print(f"New Google user created in DynamoDB: {uuid_sub}")
-                    else:
-                        print(f"Returning Google user found in DynamoDB: {uuid_sub}")
 
                 except Exception as e:
                     print(f"Warning DB: {e}")
             
+            request.session['user'] = user
             request.session['userData'] = user_metadata
             return RedirectResponse(url=f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/")
             
@@ -527,10 +546,16 @@ async def get_profile_stats(request: Request):
     else:
         level = 1
 
+    display_name = user_data.get('name') if user_data and user_data.get('name') else user.get('name')
+    if not display_name and user.get('email'):
+        display_name = user.get('email').split('@')[0]
+    if not display_name:
+        display_name = 'Citizen Reporter'
+
     return {
         "userId": user_id,
         "email": user.get('email', ''),
-        "name": user.get('name', user.get('email', 'Citizen Reporter')),
+        "name": display_name,
         "report_count": report_count,
         "areas_mapped": len(areas_mapped),
         "contributor_level": level,
