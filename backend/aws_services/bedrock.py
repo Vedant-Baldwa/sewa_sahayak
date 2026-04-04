@@ -1,12 +1,108 @@
 import boto3
 import os
 import json
+import logging
+import time
+from typing import Any
+from botocore.exceptions import ClientError
 
-# Bedrock is often configured in a region that supports the requested model
-REGION = os.getenv('BEDROCK_REGION', 'us-east-1')
-bedrock_client = boto3.client('bedrock-runtime', region_name=REGION)
+logger = logging.getLogger(__name__)
 
-def get_portal_routing(location_string: str, portals_db: dict):
+REGION = os.getenv("BEDROCK_REGION", "us-east-1")
+MODEL_ID = "amazon.nova-micro-v1:0"
+
+_bedrock_client = None
+
+
+def _get_client():
+    global _bedrock_client
+    if _bedrock_client is None:
+        _bedrock_client = boto3.client("bedrock-runtime", region_name=REGION)
+        logger.info("Bedrock client initialised (region=%s, model=%s)", REGION, MODEL_ID)
+    return _bedrock_client
+
+
+MAX_RETRIES = int(os.getenv("BEDROCK_MAX_RETRIES", "3"))
+RETRY_BASE_DELAY = float(os.getenv("BEDROCK_RETRY_BASE_DELAY", "1.0"))
+_RETRYABLE_ERROR_CODES = {"ThrottlingException", "ServiceUnavailableException", "ModelTimeoutException"}
+
+
+def _invoke_model(
+    system_prompt: str,
+    user_text: str,
+    max_tokens: int = 512,
+    temperature: float = 0.1,
+) -> str:
+    """Invoke Bedrock with retries and return the raw output text."""
+    client = _get_client()
+    messages = [{"role": "user", "content": [{"text": user_text}]}]
+    body = json.dumps({
+        "system": [{"text": system_prompt}],
+        "messages": messages,
+        "inferenceConfig": {"max_new_tokens": max_tokens, "temperature": temperature},
+    })
+
+    last_err: Exception | None = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            response = client.invoke_model(
+                modelId=MODEL_ID,
+                body=body,
+                contentType="application/json",
+                accept="application/json",
+            )
+            response_body = json.loads(response["body"].read().decode("utf-8"))
+            text = (
+                response_body
+                .get("output", {})
+                .get("message", {})
+                .get("content", [{}])[0]
+                .get("text", "")
+            )
+            return text
+
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "")
+            last_err = exc
+            if error_code in _RETRYABLE_ERROR_CODES and attempt < MAX_RETRIES:
+                delay = RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                logger.warning(
+                    "Bedrock retryable error %s (attempt %d/%d), retrying in %.1fs",
+                    error_code, attempt, MAX_RETRIES, delay,
+                )
+                time.sleep(delay)
+                continue
+            raise
+        except Exception as exc:
+            last_err = exc
+            if attempt < MAX_RETRIES:
+                delay = RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                logger.warning(
+                    "Bedrock unexpected error (attempt %d/%d): %s – retrying in %.1fs",
+                    attempt, MAX_RETRIES, exc, delay,
+                )
+                time.sleep(delay)
+                continue
+            raise
+
+    raise last_err  # type: ignore[misc]
+
+
+def _parse_json_from_llm(raw: str) -> dict[str, Any]:
+    """Strip markdown fences and parse JSON from LLM output."""
+    text = raw.strip()
+    if "```json" in text:
+        text = text.split("```json", 1)[1].split("```", 1)[0].strip()
+    elif "```" in text:
+        text = text.split("```", 1)[1].split("```", 1)[0].strip()
+    return json.loads(text)
+
+
+# ---------------------------------------------------------------------------
+# Public API (signatures unchanged)
+# ---------------------------------------------------------------------------
+
+def get_portal_routing(location_string: str, portals_db: dict) -> dict:
     system_prompt = f"""System Role: You are the Lead Dispatcher for the Sewa Sahayak Road Infrastructure Platform. Your job is to analyze a location string and select the single most appropriate government portal for filing a road complaint.
 
 Rules:
@@ -23,59 +119,37 @@ Portal_DB: {json.dumps(portals_db)}
 Output Format: (Strict JSON)
 {{"portal_name": "...", "portal_url": "...", "reasoning": "..."}}"""
 
-    # Amazon Nova models formatting
-    messages = [
-        {"role": "user", "content": [{"text": "Please provide the portal routing details based on the location provided."}]}
-    ]
-
     try:
-        response = bedrock_client.invoke_model(
-            modelId="amazon.nova-micro-v1:0",
-            body=json.dumps({
-                "system": [{"text": system_prompt}],
-                "messages": messages,
-                "inferenceConfig": {"max_new_tokens": 512, "temperature": 0.1}
-            }),
-            contentType="application/json",
-            accept="application/json"
+        raw = _invoke_model(
+            system_prompt=system_prompt,
+            user_text="Please provide the portal routing details based on the location provided.",
+            max_tokens=512,
+            temperature=0.1,
         )
-        response_body = json.loads(response['body'].read().decode('utf-8'))
-        
-        # Amazon Nova outputs are generally structured like this
-        output_text = response_body.get('output', {}).get('message', {}).get('content', [{}])[0].get('text', '')
-        
-        # Clean up possible markdown wrappers
-        if "```json" in output_text:
-            output_text = output_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in output_text:
-            output_text = output_text.split("```")[1].strip()
-            
-        return json.loads(output_text)
+        return _parse_json_from_llm(raw)
 
     except Exception as e:
-        print(f"Bedrock Routing Error: {e}")
+        logger.error("Bedrock Routing Error: %s", e, exc_info=True)
         return {
             "portal_name": "CPGRAMS",
-            "portal_url": portals_db.get('CENTRAL', {}).get('CPGRAMS', ''),
-            "reasoning": f"Default fallback due to an error processing the request or LLM failure: {str(e)}"
+            "portal_url": portals_db.get("CENTRAL", {}).get("CPGRAMS", ""),
+            "reasoning": f"Default fallback due to an error processing the request or LLM failure: {e}",
         }
 
-def generate_complaint_draft(data: dict):
-    """
-    Generates a formal, professional complaint draft using Amazon Bedrock Nova.
-    """
+
+def generate_complaint_draft(data: dict) -> dict:
+    """Generates a formal, professional complaint draft using Amazon Bedrock Nova."""
     analysis = data.get("analysis", {})
     transcription = data.get("transcription", {})
     jurisdiction = data.get("jurisdiction", {})
-    
+
     damage_type = analysis.get("damage_type", "Civic Issue")
     severity = analysis.get("severity", "Medium")
     location = jurisdiction.get("portal_name", "Local Authority")
-    
-    # Context for the AI
+
     issue_description = analysis.get("suggested_description", "")
     voice_transcript = transcription.get("transcript", "")
-    
+
     system_prompt = """System Role: You are an AI assistant for Sewa Sahayak, an Indian civic tech platform. 
 Your goal is to generate a professional, formal, and persuasive complaint to be submitted to government officials.
 
@@ -104,35 +178,17 @@ Output Format: (Strict JSON)
 - User's Voice Report: {voice_transcript}
 - Location Context: {data.get('location_context', 'Not provided')}"""
 
-    messages = [
-        {"role": "user", "content": [{"text": user_input}]}
-    ]
-
     try:
-        response = bedrock_client.invoke_model(
-            modelId="amazon.nova-micro-v1:0",
-            body=json.dumps({
-                "system": [{"text": system_prompt}],
-                "messages": messages,
-                "inferenceConfig": {"max_new_tokens": 1000, "temperature": 0.7}
-            }),
-            contentType="application/json",
-            accept="application/json"
+        raw = _invoke_model(
+            system_prompt=system_prompt,
+            user_text=user_input,
+            max_tokens=1000,
+            temperature=0.7,
         )
-        response_body = json.loads(response['body'].read().decode('utf-8'))
-        output_text = response_body.get('output', {}).get('message', {}).get('content', [{}])[0].get('text', '')
-        
-        # Clean up markdown
-        if "```json" in output_text:
-            output_text = output_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in output_text:
-            output_text = output_text.split("```")[1].strip()
-            
-        return json.loads(output_text)
+        return _parse_json_from_llm(raw)
 
     except Exception as e:
-        print(f"Bedrock Draft Generation Error: {e}")
-        # Fallback to the original logic
+        logger.error("Bedrock Draft Generation Error: %s", e, exc_info=True)
         description = issue_description or ("Voice Report: " + voice_transcript) or "Observed civic hazard."
         return {
             "applicantName": "Citizen Reporter",
@@ -140,20 +196,25 @@ Output Format: (Strict JSON)
             "severity": severity,
             "jurisdiction": location,
             "ward": jurisdiction.get("ward_district") or "Default Ward",
-            "description": f"To the concerned authority,\n\nI am reporting a issue regarding {damage_type}.\n\nDetails:\n{description}\n\nPlease address this at your earliest convenience.\n\nThank you."
+            "description": (
+                f"To the concerned authority,\n\n"
+                f"I am reporting a issue regarding {damage_type}.\n\n"
+                f"Details:\n{description}\n\n"
+                f"Please address this at your earliest convenience.\n\n"
+                f"Thank you."
+            ),
         }
 
-def generate_cluster_complaint(data: dict):
-    """
-    Generates a formal complaint for a cluster of detected issues.
-    """
+
+def generate_cluster_complaint(data: dict) -> str:
+    """Generates a formal complaint for a cluster of detected issues."""
     authority = data.get("portal_name", "Local Authority")
     sub_area = data.get("sub_area", "this area")
     lat = data.get("latitude")
     lng = data.get("longitude")
     event_count = data.get("event_count", 1)
     severity = data.get("severity", "moderate")
-    
+
     system_prompt = """System Role: You are an AI assistant for Sewa Sahayak. 
 Your goal is to generate a comprehensive, formal complaint based on multiple dashcam detection events.
 
@@ -172,25 +233,19 @@ Rules:
 - Detection Count: {event_count}
 - Aggregate Severity: {severity}"""
 
-    messages = [
-        {"role": "user", "content": [{"text": user_input}]}
-    ]
-
     try:
-        response = bedrock_client.invoke_model(
-            modelId="amazon.nova-micro-v1:0",
-            body=json.dumps({
-                "system": [{"text": system_prompt}],
-                "messages": messages,
-                "inferenceConfig": {"max_new_tokens": 1000, "temperature": 0.7}
-            }),
-            contentType="application/json",
-            accept="application/json"
+        raw = _invoke_model(
+            system_prompt=system_prompt,
+            user_text=user_input,
+            max_tokens=1000,
+            temperature=0.7,
         )
-        response_body = json.loads(response['body'].read().decode('utf-8'))
-        output_text = response_body.get('output', {}).get('message', {}).get('content', [{}])[0].get('text', '')
-        return output_text.strip()
+        return raw.strip()
 
     except Exception as e:
-        print(f"Bedrock Cluster Complaint Error: {e}")
-        return f"To the concerned {authority},\n\nThis is a report regarding road damage at {sub_area} ({lat}, {lng}). Multiple events ({event_count}) have been recorded. Please inspect."
+        logger.error("Bedrock Cluster Complaint Error: %s", e, exc_info=True)
+        return (
+            f"To the concerned {authority},\n\n"
+            f"This is a report regarding road damage at {sub_area} ({lat}, {lng}). "
+            f"Multiple events ({event_count}) have been recorded. Please inspect."
+        )
