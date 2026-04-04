@@ -1,6 +1,6 @@
 # Sewa Sahayak
 
-> **🌐 Live Demo:** [http://43-205-103-222.nip.io](http://43-205-103-222.nip.io) *(hosted on AWS EC2, may have occasional downtime)*
+> **🌐 Live Demo:** [http://43-205-103-222.nip.io](http://43-205-103-222.nip.io) *(hosted on AWS EC2)*
 
 Sewa Sahayak (सेवा सहायक) is a cutting-edge civic-tech platform that leverages **Amazon SageMaker**, **Amazon Bedrock's multi-modal AI**, and **Amazon Nova Act's browser automation** to bridge the "Reporting Wall" between Indian citizens and government portals.
 
