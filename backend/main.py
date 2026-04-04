@@ -148,9 +148,12 @@ async def authorize(request: Request):
                         db_response = users_table.get_item(Key={'userId': uuid_sub})
                         user_metadata = db_response.get('Item')
 
-                    # First login — create a new user record
                     if not user_metadata:
                         import time as _time
+                        extracted_name = user.get('name')
+                        if not extracted_name and user_email:
+                            extracted_name = user_email.split('@')[0]
+                            
                         user_metadata = {
                             'userId':       uuid_sub,
                             'name':         user.get('name', ''),
@@ -556,6 +559,12 @@ async def get_profile_stats(request: Request):
         level = 2
     else:
         level = 1
+
+    display_name = user_data.get('name') if user_data and user_data.get('name') else user.get('name')
+    if not display_name and user.get('email'):
+        display_name = user.get('email').split('@')[0]
+    if not display_name:
+        display_name = 'Citizen Reporter'
 
     return {
         "userId": user_id,
