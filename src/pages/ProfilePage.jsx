@@ -7,6 +7,8 @@ const ProfilePage = ({ user }) => {
         ? new Date(parseInt(user.created_at) * 1000).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
         : "March 2026";
 
+    const displayName = user?.userData?.name || user?.name || (user?.email ? user.email.split('@')[0] : "Citizen Reporter");
+
     return (
         <div className="app-container" style={{ padding: '4rem 2rem', maxWidth: '1200px', margin: '0 auto', minHeight: 'calc(100vh - 80px)' }}>
 
@@ -33,10 +35,10 @@ const ProfilePage = ({ user }) => {
                             fontWeight: 'bold',
                             boxShadow: '0 0 30px var(--color-primary-glow)'
                         }}>
-                            { (user?.userData?.name || user?.name) ? (user?.userData?.name || user?.name).charAt(0).toUpperCase() : <User size={40} />}
+                            { displayName !== "Citizen Reporter" ? displayName.charAt(0).toUpperCase() : <User size={40} />}
                         </div>
 
-                        <h2 style={{ fontSize: '1.75rem', marginBottom: '0.25rem' }}>{user?.userData?.name || user?.name || "Citizen Reporter"}</h2>
+                        <h2 style={{ fontSize: '1.75rem', marginBottom: '0.25rem' }}>{displayName}</h2>
                         <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem' }}>{user?.email}</p>
 
                         <div style={{
