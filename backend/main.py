@@ -156,7 +156,7 @@ async def authorize(request: Request):
                             
                         user_metadata = {
                             'userId':       uuid_sub,
-                            'name':         user.get('name', ''),
+                            'name':         extracted_name or '',
                             'email':        user_email,
                             'phone_number': user.get('phone_number', ''),
                             'createdAt':    str(int(_time.time())),
@@ -569,7 +569,7 @@ async def get_profile_stats(request: Request):
     return {
         "userId": user_id,
         "email": user.get('email', ''),
-        "name": user_data.get('name', user.get('name', user.get('email', 'Citizen Reporter'))),
+        "name": display_name,
         "report_count": report_count,
         "areas_mapped": len(areas_mapped),
         "contributor_level": level,
