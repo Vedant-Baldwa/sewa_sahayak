@@ -200,11 +200,22 @@ const Dashboard = () => {
 
             {/* Map */}
             <div className="dashboard-map-container">
-                <MapContainer center={clusters.length > 0 ? [clusters[0].latitude, clusters[0].longitude] : [26.85, 80.95]} zoom={13} style={{ height: '100%', width: '100%' }}>
+                <MapContainer
+                    center={clusters.length > 0 ? [clusters[0].latitude, clusters[0].longitude] : [26.85, 80.95]}
+                    zoom={13}
+                    minZoom={2}
+                    maxBounds={[
+                        [-85, -180],
+                        [85, 180],
+                    ]}
+                    maxBoundsViscosity={0.7}
+                    style={{ height: '100%', width: '100%' }}
+                >
                     <MapFlyTo cluster={selectedCluster} clusters={clusters} />
                     <TileLayer
                         url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                        noWrap
                     />
 
                     {clusters.map((cluster) => {
@@ -416,7 +427,10 @@ const Dashboard = () => {
                     from { opacity: 0; transform: translateY(20px); }
                     to { opacity: 1; transform: translateY(0); }
                 }
-                .leaflet-container { z-index: 1; }
+                .leaflet-container {
+                    z-index: 1;
+                    background: #aad3df;
+                }
 
                 /* Dashboard Root */
                 .dashboard-root {
