@@ -57,7 +57,7 @@ const InteractiveScene = () => {
                         boxShadow: '0 10px 40px rgba(99,102,241,0.4), 0 0 30px rgba(139,92,246,0.3)'
                     }}>
                         <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#34d399' }}></div>
-                        Live Redaction Active
+                        Evidence Redaction Active
                     </div>
                 </div>
             </div>
@@ -173,7 +173,7 @@ const Home = ({ user }) => {
                         <FeatureFeature
                             icon={<Shield size={20} />}
                             title="Zero-Latency Privacy"
-                            description="Personal data never leaves the device. Faces and license plates are permanently redacted before network transmission."
+                            description="Faces and license plates are automatically redacted in all generated evidence — clips and images — before they reach any intelligence report."
                             delay={0.2}
                         />
                         <FeatureFeature

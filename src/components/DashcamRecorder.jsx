@@ -17,53 +17,6 @@ const DashcamRecorder = () => {
     const [unsyncedCount, setUnsyncedCount] = useState(0);
     const [isUploading, setIsUploading] = useState(false);
     const [errorMSG, setErrorMSG] = useState(null);
-    const [livePiiBoxes, setLivePiiBoxes] = useState({ faces: [], text: [] });
-
-    // Live Redaction Polling (client-side preview only)
-    useEffect(() => {
-        let liveDetectionInterval;
-        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
-
-        const updateLivePii = async () => {
-            if (!videoRef.current || videoRef.current.paused || videoRef.current.ended) return;
-
-            try {
-                // Capture current frame to blob
-                const canvas = document.createElement('canvas');
-                canvas.width = videoRef.current.videoWidth / 4; // Downscale for speed
-                canvas.height = videoRef.current.videoHeight / 4;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-
-                canvas.toBlob(async (blob) => {
-                    if (!blob) return;
-                    const formData = new FormData();
-                    formData.append('media', blob, 'frame.jpg');
-
-                    const res = await fetch(`${BACKEND_URL}/api/redact/live`, {
-                        method: 'POST',
-                        body: formData,
-                        credentials: 'include'
-                    });
-
-                    if (res.ok) {
-                        const data = await res.json();
-                        setLivePiiBoxes(data);
-                    }
-                }, 'image/jpeg', 0.5);
-            } catch (err) {
-                console.warn("Live PII detection failed", err);
-            }
-        };
-
-        if (isRecording) {
-            liveDetectionInterval = setInterval(updateLivePii, 1500); // Poll every 1.5s
-        } else {
-            setLivePiiBoxes({ faces: [], text: [] });
-        }
-
-        return () => clearInterval(liveDetectionInterval);
-    }, [isRecording]);
 
     // Initialize camera
     const startCamera = async () => {
@@ -288,37 +241,7 @@ const DashcamRecorder = () => {
                     </div>
                 </div>
 
-                {/* Live PII Overlays */}
-                <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-                    {livePiiBoxes.faces.map((box, i) => (
-                        <div key={`face-${i}`} style={{
-                            position: 'absolute',
-                            left: `${box.Left * 100}%`,
-                            top: `${box.Top * 100}%`,
-                            width: `${box.Width * 100}%`,
-                            height: `${box.Height * 100}%`,
-                            backdropFilter: 'blur(30px)',
-                            background: 'rgba(255,255,255,0.05)',
-                            borderRadius: '50%',
-                            border: '1px solid rgba(255,255,255,0.2)',
-                            transition: 'all 0.5s ease-in-out'
-                        }} />
-                    ))}
-                    {livePiiBoxes.text.map((box, i) => (
-                        <div key={`text-${i}`} style={{
-                            position: 'absolute',
-                            left: `${box.Left * 100}%`,
-                            top: `${box.Top * 100}%`,
-                            width: `${box.Width * 100}%`,
-                            height: `${box.Height * 100}%`,
-                            backdropFilter: 'blur(20px)',
-                            background: 'rgba(255,255,255,0.05)',
-                            borderRadius: '4px',
-                            border: '1px solid rgba(255,255,255,0.2)',
-                            transition: 'all 0.5s ease-in-out'
-                        }} />
-                    ))}
-                </div>
+
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>

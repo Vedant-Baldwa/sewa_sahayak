@@ -26,8 +26,8 @@ export default function Auth() {
                 </div>
 
                 <div style={{ marginBottom: '2.5rem' }}>
-                    <h2 style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>Civic Portal</h2>
-                    <p style={{ color: 'var(--color-text-muted)' }}>Secure access for citizen reporters</p>
+                    <h2 style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>Login</h2>
+                    <p style={{ color: 'var(--color-text-muted)' }}>Report road damage and help authorities fix issues faster.</p>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
